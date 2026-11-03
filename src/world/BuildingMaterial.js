@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { cityLightUniforms, CITY_LIGHT_GLSL } from '../render/CityLights.js';
 
 // Procedural facade shader on top of MeshStandardMaterial.
 // Each building cell is an instanced box. The shader works out, per fragment, whether it is on
@@ -25,8 +26,9 @@ const prefix = /* glsl */`
 uniform vec3 uWallA; uniform vec3 uWallB; uniform vec3 uGlass; uniform vec3 uTrim; uniform vec3 uRoof;
 uniform vec4 uWin; uniform float uStyle; uniform float uSeed;
 uniform vec3 uCamPos; uniform vec3 uFocus; uniform float uFadeOn;
-varying vec3 vLocal; varying vec3 vObjN; varying vec3 vInfo; varying vec3 vWPos;
-
+varying vec3 vLocal; varying vec3 vObjN; varying vec3 vInfo; varying vec3 vWPos; varying float vPow;
+uniform float uTime;
+${CITY_LIGHT_GLSL}
 float bh12(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * .1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
 float bnoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
   float a = bh12(i), b = bh12(i+vec2(1,0)), c = bh12(i+vec2(0,1)), d = bh12(i+vec2(1,1));
@@ -121,12 +123,9 @@ const fragMain = /* glsl */`
       frame = (outer - inWin) * (1.0 - ground);
     }
 
-    // glass
+    // ---- glass + night interiors ----
     float tint = h;
-    vec3 glass = uGlass * (0.75 + 0.5 * tint);
-    float blinds = step(0.72, h) * step(fv, mix(top, sill, 0.45 + 0.4 * fract(h * 7.0)));
-    vec3 interior = mix(vec3(0.05, 0.05, 0.055), vec3(0.62, 0.58, 0.5), blinds);
-    float lit = step(0.93, fract(h * 13.7));
+    vec3 glass = uGlass * (0.55 + 0.4 * tint);
     float broken = step(h, dmg * 1.35 - 0.05) + step(0.95, dmg);
     broken = clamp(broken, 0.0, 1.0);
     // jagged shard edge around broken panes
@@ -134,31 +133,58 @@ const fragMain = /* glsl */`
     float inner = boxAA(fu, 0.5 - winHalf * 0.85 + jag * 0.08, 0.5 + winHalf * 0.85 - jag * 0.08, 0.01)
                 * boxAA(fv, sill + 0.06 + jag * 0.05, top - 0.06 - jag * 0.05, 0.01);
     float hole = broken * inner;
-
-    vec3 winCol = mix(glass, interior, uStyle < 0.5 ? blinds * 0.6 : 0.35 + blinds * 0.5);
     float occ = step(1.0, vInfo.z) * (1.0 - broken);
-    if (occ > 0.5) {
-      // window flung open: lit room, ceiling light, darker floor band
-      vec3 room = mix(vec3(0.55, 0.38, 0.22), vec3(0.95, 0.78, 0.5), smoothstep(sill, top, fv));
-      winCol = room;
-      bEmis += vec3(1.0, 0.7, 0.42) * inWin * 0.55;
-    }
-    float winRough = mix(uStyle < 0.5 ? 0.04 : 0.12, 0.9, occ);
-    float winMetal = mix(uStyle < 0.5 ? 0.85 : 0.55, 0.0, occ);
-    winCol = mix(winCol, vec3(0.012, 0.011, 0.012), hole);
+
+    // which rooms are lit tonight: per building type, with whole office floors lit together
+    float h2 = bh12(wcell * 2.71 + 0.3);
+    float litFrac = uStyle < 0.5 ? 0.6 : uStyle < 1.5 ? 0.55 : uStyle < 2.5 ? 0.52 : uStyle < 3.5 ? 0.42 : 0.45;
+    float officeFloor = step(0.45, bh12(vec2(fl, uSeed * 1.7)));
+    float isLit = (uStyle < 1.5) ? max(step(h2, litFrac * 0.55), officeFloor * step(h2, 0.92)) : step(h2, litFrac);
+    if (ground > 0.5) isLit = 1.0; // storefronts and lobbies stay lit
+    isLit = max(isLit, occ);
+    // electrical state of this cell: 1 steady, 0 dead, in between = failing (flicker)
+    float pw = vPow;
+    float fn = bnoise(vec2(uTime * 11.0 + vInfo.z * 61.0, wid * 3.1 + fl * 1.7));
+    float onK = pw > 0.995 ? 1.0 : step(1.0 - pw * 0.85, fn) * (0.4 + 0.6 * pw);
+    // light colours: warm homes, neutral and cool offices, occasional blue TV glow
+    float hc = bh12(wcell * 5.3 + 1.1);
+    vec3 warm = vec3(1.0, 0.62, 0.3), neutral = vec3(1.0, 0.82, 0.58), cool = vec3(0.68, 0.82, 1.0), tv = vec3(0.35, 0.5, 1.0);
+    vec3 lc = (uStyle < 1.5) ? mix(cool, neutral, step(0.6, hc)) : (hc < 0.12 ? tv : mix(warm, neutral, step(0.7, hc)));
+    if (ground > 0.5) lc = mix(neutral, cool, step(0.5, bh12(vec2(wid, uSeed))));
+    // simple room illusion: ceiling light falloff, furniture, blinds/curtains, the odd silhouette
+    float wy = (fv - sill) / max(0.01, top - sill), wx = (fu - (0.5 - winHalf)) / max(0.01, 2.0 * winHalf);
+    float room = 0.55 + 0.6 * smoothstep(0.0, 1.0, wy);
+    room *= 1.0 - 0.6 * step(wy, 0.22) * step(0.5, bh12(wcell + 7.0)) * boxAA(wx, 0.15 + h * 0.3, 0.55 + h * 0.4, 0.02);
+    if (uStyle < 1.5) room *= mix(1.0, 0.7 + 0.3 * step(0.5, fract(wy * 18.0)), step(0.55, h)); // blinds
+    else room *= mix(1.0, 0.45, (1.0 - boxAA(wx, 0.18, 0.82, 0.03)) * step(0.4, h)); // curtains
+    float person = step(0.86, bh12(wcell + 3.3)) * (1.0 - smoothstep(0.08, 0.13, length(vec2((wx - 0.5 - (h - 0.5) * 0.4) * 1.6, (wy - 0.35) * 1.0))));
+    person = max(person, step(0.86, bh12(wcell + 3.3)) * boxAA(wx, 0.38 + (h - 0.5) * 0.4, 0.62 + (h - 0.5) * 0.4, 0.02) * step(wy, 0.3));
+    room *= 1.0 - person * 0.85;
+    float glow = isLit * onK * (1.0 - hole);
+    vec3 roomCol = lc * room;
+    if (occ > 0.5) roomCol = mix(vec3(0.75, 0.48, 0.25), vec3(1.0, 0.82, 0.55), smoothstep(0.0, 1.0, wy));
+
+    vec3 winCol = mix(glass, roomCol * 0.25, glow);
+    float winRough = mix(uStyle < 0.5 ? 0.05 : 0.12, 0.6, glow);
+    float winMetal = mix(uStyle < 0.5 ? 0.9 : 0.6, 0.1, glow);
+    winCol = mix(winCol, vec3(0.006), hole);
     winRough = mix(winRough, 0.95, hole);
     winMetal = mix(winMetal, 0.0, hole);
+    float winE = (ground > 0.5 ? 0.8 : uStyle < 1.5 ? 0.85 : 0.75) * (0.75 + 0.5 * h);
+    bEmis += roomCol * glow * inWin * winE;
 
-    vec3 frameCol = uStyle < 0.5 ? vec3(0.62, 0.66, 0.7) : uTrim;
+    vec3 frameCol = uStyle < 0.5 ? vec3(0.45, 0.48, 0.52) : uTrim;
     bAlb = mix(wall, frameCol, frame);
     bRough = mix(uStyle < 0.5 ? 0.35 : 0.88, 0.5, frame);
     bMetal = uStyle < 0.5 ? 0.35 * frame + 0.2 : 0.0;
     bAlb = mix(bAlb, winCol, inWin);
     bRough = mix(bRough, winRough, inWin);
     bMetal = mix(bMetal, winMetal, inWin);
-    bEmis += vec3(1.0, 0.75, 0.45) * lit * inWin * (1.0 - hole) * 0.35;
-    // glass reflects the sky strongly; walls only a little
-    bRefl = mix(0.7, uStyle < 0.5 ? 2.6 : 1.9, inWin * (1.0 - hole) * (1.0 - occ));
+    // dark glass mirrors the lit city; lit panes and walls reflect less
+    bRefl = mix(0.6, uStyle < 0.5 ? 2.4 : 1.7, inWin * (1.0 - hole) * (1.0 - glow * 0.7));
+    // light spilling onto the wall just around lit windows
+    float spill = isLit * onK * (1.0 - inWin) * boxAA(fu, 0.5 - winHalf - 0.12, 0.5 + winHalf + 0.12, 0.08) * boxAA(fv, sill - 0.1, top + 0.08, 0.06);
+    bEmis += wall * lc * spill * 0.06;
     // recessed windows: darker frame edge around each pane
     float rim = inWin * (1.0 - boxAA(fu, 0.5 - winHalf + 0.03, 0.5 + winHalf - 0.03, 0.01) * boxAA(fv, sill + 0.03, top - 0.03, 0.01));
     bAO *= 1.0 - rim * 0.55;
@@ -167,12 +193,14 @@ const fragMain = /* glsl */`
       // signage band above storefronts
       float sign = boxAA(fv, 0.8, 0.95, aaw) * boxAA(fu, 0.08, 0.92, aaw);
       vec3 signCol = 0.5 + 0.5 * cos(6.2831 * (bh12(vec2(wid, uSeed)) + vec3(0.0, 0.33, 0.67)));
-      bAlb = mix(bAlb, signCol * (uStyle > 3.5 ? 1.0 : 0.6), sign * (uStyle > 2.5 ? 1.0 : 0.6));
-      bEmis += signCol * sign * 0.12;
+      bAlb = mix(bAlb, signCol * 0.3, sign);
+      float neon = sign * (0.6 + 0.4 * step(0.25, bnoise(vec2(fc.x * 3.0, fc.y * 6.0) + wid)));
+      bEmis += signCol * neon * onK * (uStyle > 2.5 ? 3.2 : 2.2);
       if (uStyle > 3.5) {
         // striped awning
         float aw = boxAA(fv, 0.75, 0.8, aaw) * step(0.5, fract(fc.x * 1.0));
-        bAlb = mix(bAlb, signCol, aw);
+        bAlb = mix(bAlb, signCol * 0.6, aw);
+        bEmis += signCol * aw * 0.25 * onK;
       }
     }
     // parapet / cornice on the top storey of each tier
@@ -185,6 +213,8 @@ const fragMain = /* glsl */`
     // grime streaks near the base and under windows
     float grime = (1.0 - smoothstep(0.0, 5.0, fc.y)) * 0.32 + bfbm(vec2(fc.x * 0.6, fc.y * 0.08) + uSeed) * 0.14;
     bAlb *= 1.0 - grime;
+    // street lamps, signs and headlights wash up the lower floors
+    bEmis += bAlb * cityLightAt(vWPos + vObjN * 0.6);
   } else if (ext > 0.5) {
     // ---------------- roof ----------------
     vec2 rp = fc;
@@ -222,6 +252,7 @@ const fragMain = /* glsl */`
       bRough = 0.95;
     }
     dmg = max(dmg, 0.5);
+    bEmis += bAlb * cityLightAt(vWPos) * 0.5;
   }
 
   // ---------------- damage: cracks + soot ----------------
@@ -254,11 +285,11 @@ export function createBuildingMaterial(style) {
   };
   mat.userData.u = u;
   mat.onBeforeCompile = (shader) => {
-    Object.assign(shader.uniforms, u, sharedBuildingUniforms);
+    Object.assign(shader.uniforms, u, sharedBuildingUniforms, cityLightUniforms);
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `#include <common>
-        attribute vec3 aInfo;
-        varying vec3 vLocal; varying vec3 vObjN; varying vec3 vInfo; varying vec3 vWPos;`)
+        attribute vec3 aInfo; attribute float aPow;
+        varying vec3 vLocal; varying vec3 vObjN; varying vec3 vInfo; varying vec3 vWPos; varying float vPow;`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>
         #ifdef USE_INSTANCING
           vec4 lp = instanceMatrix * vec4(position, 1.0);
@@ -268,6 +299,7 @@ export function createBuildingMaterial(style) {
         vLocal = lp.xyz;
         vObjN = normal;
         vInfo = aInfo;
+        vPow = aPow;
         vWPos = (modelMatrix * lp).xyz;`);
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>\n${prefix}`)
@@ -276,9 +308,9 @@ export function createBuildingMaterial(style) {
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>\n roughnessFactor = bRough;`)
       .replace('#include <metalnessmap_fragment>', `#include <metalnessmap_fragment>\n metalnessFactor = bMetal;`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>\n totalEmissiveRadiance += bEmis;`)
-      .replace('#include <lights_fragment_maps>', `#include <lights_fragment_maps>\n iblIrradiance *= 0.8 * bAO; radiance *= bRefl;`);
+      .replace('#include <lights_fragment_maps>', `#include <lights_fragment_maps>\n iblIrradiance *= 0.45 * bAO; radiance *= bRefl;`);
   };
-  mat.customProgramCacheKey = () => 'cs-building-v3';
+  mat.customProgramCacheKey = () => 'cs-building-night-v1';
   return mat;
 }
 

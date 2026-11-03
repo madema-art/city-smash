@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { ParticleSystem } from './Particles.js';
 import { BallisticPieces, makeShardGeometry, makeRockGeometry } from './Ballistic.js';
 import { DESTRUCTION, WORLD } from '../config.js';
+import { patchCityLight } from '../render/CityLights.js';
 
 const _c = new THREE.Color();
 const R = Math.random;
@@ -18,7 +19,7 @@ export class FX {
     });
     this.glass = new BallisticPieces(scene, makeShardGeometry(), glassMat, DESTRUCTION.maxGlass, { groundLinger: 4, bounce: 0.15 });
 
-    const chipMat = new THREE.MeshStandardMaterial({ roughness: 0.95, flatShading: true });
+    const chipMat = patchCityLight(new THREE.MeshStandardMaterial({ roughness: 0.95, flatShading: true }), { key: 'chips' });
     this.chips = new BallisticPieces(scene, makeRockGeometry(0, 11), chipMat, DESTRUCTION.maxChips, { groundLinger: 6, bounce: 0.3, castShadow: true });
 
     // Shock rings for stomps and slams.

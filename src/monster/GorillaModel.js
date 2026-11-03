@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { buildField, surfaceNets, primDist, primBounds, smin, smax } from './sdf.js';
+import { patchCityLight } from '../render/CityLights.js';
 
 // Procedurally sculpted silverback gorilla.
 // Authored in "real gorilla" metres (≈1.8 tall upright, Y up, facing +Z) and scaled up at runtime.
@@ -75,8 +76,18 @@ function definePrims() {
     E([-0.12, 1.24, 0.15], [0.14, 0.11, 0.085], 'chest', 'skin', 0.05),
     E([0, 1.2, -0.1], [0.33, 0.24, 0.18], 'chest', 'fur', 0.09),
     E([0, 0.97, -0.1], [0.24, 0.18, 0.14], 'spine', 'fur', 0.08),
-    E([0, 1.4, -0.03], [0.33, 0.13, 0.18], { chest: 0.75, neck: 0.25 }, 'fur', 0.09),
-    E([0, 1.45, 0.0], [0.17, 0.1, 0.14], { neck: 0.7, chest: 0.3 }, 'fur', 0.07),
+    E([0, 1.41, -0.04], [0.35, 0.14, 0.19], { chest: 0.75, neck: 0.25 }, 'fur', 0.09),
+    E([0, 1.47, -0.02], [0.19, 0.11, 0.15], { neck: 0.7, chest: 0.3 }, 'fur', 0.07),
+    // massive back: lats flaring under the shoulder blades, erector ridge, scapulae
+    E([0.2, 1.16, -0.11], [0.13, 0.2, 0.12], 'chest', 'fur', 0.06, { q: quatFromEuler(0, 0, -0.25) }),
+    E([-0.2, 1.16, -0.11], [0.13, 0.2, 0.12], 'chest', 'fur', 0.06, { q: quatFromEuler(0, 0, 0.25) }),
+    E([0.15, 1.31, -0.15], [0.11, 0.09, 0.07], 'chest', 'fur', 0.05),
+    E([-0.15, 1.31, -0.15], [0.11, 0.09, 0.07], 'chest', 'fur', 0.05),
+    E([0, 1.04, -0.15], [0.07, 0.17, 0.06], 'spine', 'fur', 0.05),
+    // pot belly and lower chest plates
+    E([0, 0.93, 0.13], [0.2, 0.15, 0.13], 'spine', 'fur', 0.07),
+    E([0.07, 1.1, 0.19], [0.09, 0.07, 0.06], 'chest', 'skin', 0.04),
+    E([-0.07, 1.1, 0.19], [0.09, 0.07, 0.06], 'chest', 'skin', 0.04),
     E([0.1, 0.8, -0.14], [0.11, 0.11, 0.09], 'hips', 'fur', 0.05),
     E([-0.1, 0.8, -0.14], [0.11, 0.11, 0.09], 'hips', 'fur', 0.05),
     // deltoids belong to torso group so the shoulder reads as one mass
@@ -85,11 +96,16 @@ function definePrims() {
   ];
   const head = [
     E([0, 1.555, 0.13], [0.12, 0.12, 0.13], 'head', 'fur', 0.04),
-    E([0, 1.655, 0.07], [0.055, 0.1, 0.115], 'head', 'crest', 0.06),
-    E([0, 1.585, 0.235], [0.122, 0.036, 0.055], 'head', 'skin', 0.035),
+    E([0, 1.67, 0.06], [0.06, 0.115, 0.125], 'head', 'crest', 0.06),
+    E([0, 1.585, 0.235], [0.128, 0.04, 0.06], 'head', 'skin', 0.035),
+    E([0.06, 1.592, 0.252], [0.055, 0.03, 0.04], 'head', 'skin', 0.02),
+    E([-0.06, 1.592, 0.252], [0.055, 0.03, 0.04], 'head', 'skin', 0.02),
+    E([0.075, 1.505, 0.235], [0.05, 0.06, 0.05], 'head', 'skin', 0.025),
+    E([-0.075, 1.505, 0.235], [0.05, 0.06, 0.05], 'head', 'skin', 0.025),
+    E([0, 1.478, 0.29], [0.085, 0.03, 0.045], 'head', 'lip', 0.02),
     E([0, 1.53, 0.215], [0.095, 0.075, 0.075], 'head', 'skin', 0.03),
     E([0, 1.49, 0.265], [0.1, 0.06, 0.07], 'head', 'skin', 0.03),
-    E([0, 1.548, 0.292], [0.058, 0.036, 0.032], 'head', 'skin', 0.02),
+    E([0, 1.546, 0.294], [0.066, 0.038, 0.034], 'head', 'skin', 0.02),
     E([0, 1.445, 0.238], [0.092, 0.045, 0.075], 'jaw', 'lip', 0.03),
     E([0, 1.43, 0.2], [0.1, 0.05, 0.07], 'jaw', 'fur', 0.04),
     E([0.09, 1.5, 0.18], [0.065, 0.08, 0.07], 'head', 'fur', 0.03),
@@ -111,6 +127,9 @@ function definePrims() {
     C([0.5, 0.96, 0.07], [0.57, 0.56, 0.13], 0.09, 0.07, 'forearmL', 'fur', 0.05),
     E([0.52, 0.84, 0.08], [0.118, 0.165, 0.115], 'forearmL', 'fur', 0.045, { q: quatFromEuler(0, 0, 0.17) }),
     E([0.58, 0.47, 0.15], [0.088, 0.1, 0.075], 'handL', 'fur', 0.03),
+    E([0.48, 0.9, 0.12], [0.08, 0.13, 0.08], 'forearmL', 'fur', 0.04, { q: quatFromEuler(0.1, 0, 0.12) }),
+    E([0.4, 1.3, 0.06], [0.11, 0.1, 0.1], 'upperArmL', 'fur', 0.04),
+    E([0.58, 0.385, 0.2], [0.075, 0.035, 0.04], 'handL', 'skin', 0.02),
     C([0.54, 0.42, 0.185], [0.536, 0.34, 0.205], 0.031, 0.028, 'handL', 'skin', 0.016),
     C([0.568, 0.42, 0.19], [0.567, 0.335, 0.212], 0.032, 0.029, 'handL', 'skin', 0.016),
     C([0.596, 0.42, 0.188], [0.597, 0.337, 0.21], 0.031, 0.028, 'handL', 'skin', 0.016),
@@ -278,6 +297,24 @@ export function buildGorillaGeometry(resolution = 0.0135) {
   geo.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   geo.setAttribute('aFur', new THREE.BufferAttribute(furA, 1));
+  // where damage shows first: shoulders, upper back, arms and flanks (what the camera sees)
+  const wb = new Float32Array(nV);
+  const samples = [];
+  for (let v = 0; v < nV; v++) {
+    const x = positions[v * 3], y = positions[v * 3 + 1], z = positions[v * 3 + 2];
+    const nz = normals[v * 3 + 2], ax = Math.abs(x);
+    const back = smooth(0.1, -0.12, z) * smooth(0.9, 1.15, y) * (1 - smooth(1.55, 1.65, y));
+    const shoulder = smooth(0.18, 0.32, ax) * smooth(1.15, 1.32, y) * (1 - smooth(1.5, 1.6, y));
+    const arm = smooth(0.34, 0.45, ax) * smooth(0.45, 0.7, y);
+    const flank = smooth(0.18, 0.28, ax) * smooth(0.85, 0.95, y) * (1 - smooth(1.3, 1.4, y));
+    const thigh = smooth(0.35, -0.1, nz) * smooth(0.45, 0.6, y) * (1 - smooth(0.8, 0.9, y)) * 0.5;
+    let w = Math.max(back, shoulder, arm * 0.85, flank * 0.75, thigh) * 0.85 + 0.15 * vnoise3(x * 11, y * 11, z * 11);
+    if (y > 1.5 && z > 0.15) w *= 0.25; // spare the face
+    wb[v] = Math.min(1, w);
+    if (v % 97 === 0 && furA[v] > 0.5) samples.push([x, y, z, normals[v * 3], normals[v * 3 + 1], normals[v * 3 + 2], wb[v]]);
+  }
+  geo.setAttribute('aWound', new THREE.BufferAttribute(wb, 1));
+  geo.userData.hitSamples = samples;
   geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(skinIdx, 4));
   geo.setAttribute('skinWeight', new THREE.BufferAttribute(skinW, 4));
   geo.setIndex(new THREE.BufferAttribute(indices, 1));
@@ -286,54 +323,101 @@ export function buildGorillaGeometry(resolution = 0.0135) {
   return cached;
 }
 
-export function gorillaMaterial({ shell = false } = {}) {
+// Diegetic health: the material carries the gorilla's condition. uWound (0 healthy .. 1 near
+// death) opens wounds where aWound says damage shows first (shoulders, upper back, arms, sides:
+// what the third-person camera sees), mats the surrounding fur with blood, adds cuts and dust.
+// uHits are localized splats where bullets/shells actually landed (rest-pose space).
+export function gorillaMaterial() {
   const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82, metalness: 0.0 });
+  const u = {
+    uWound: { value: 0 },
+    uHeal: { value: 0 },
+    uRage: { value: 0 },
+    uHits: { value: Array.from({ length: 10 }, () => new THREE.Vector4(0, -10, 0, 0)) },
+  };
+  mat.userData.u = u;
   mat.onBeforeCompile = (sh) => {
-    sh.uniforms.uShell = { value: 0 };
+    Object.assign(sh.uniforms, u);
     mat.userData.shader = sh;
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', `#include <common>
-        attribute float aFur; varying float vFur; varying vec3 vRest; varying vec3 vVN;`)
+        attribute float aFur; attribute float aWound; varying float vFur; varying float vWB; varying vec3 vRest; varying vec3 vVN;`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>
-        vFur = aFur; vRest = position;`)
+        vFur = aFur; vWB = aWound; vRest = position;`)
       .replace('#include <defaultnormal_vertex>', `#include <defaultnormal_vertex>
         vVN = normalize(transformedNormal);`);
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
-        varying float vFur; varying vec3 vRest; varying vec3 vVN;
+        uniform float uWound; uniform float uHeal; uniform float uRage; uniform vec4 uHits[10];
+        varying float vFur; varying float vWB; varying vec3 vRest; varying vec3 vVN;
         float fh(vec3 p){ p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
         float fn(vec3 x){ vec3 i = floor(x), f = fract(x); f = f*f*(3.0-2.0*f);
           return mix(mix(mix(fh(i), fh(i+vec3(1,0,0)), f.x), mix(fh(i+vec3(0,1,0)), fh(i+vec3(1,1,0)), f.x), f.y),
-                     mix(mix(fh(i+vec3(0,0,1)), fh(i+vec3(1,0,1)), f.x), mix(fh(i+vec3(0,1,1)), fh(i+vec3(1,1,1)), f.x), f.y), f.z); }`)
+                     mix(mix(fh(i+vec3(0,0,1)), fh(i+vec3(1,0,1)), f.x), mix(fh(i+vec3(0,1,1)), fh(i+vec3(1,1,1)), f.x), f.y), f.z); }
+        float gWoundCore = 0.0; float gMat = 0.0;`)
       .replace('#include <color_fragment>', `#include <color_fragment>
-        // hair strands: stretched noise along Y in rest space
-        float strands = fn(vec3(vRest.x * 260.0, vRest.y * 60.0, vRest.z * 260.0));
+        // hair: stretched noise along the fur direction (mostly downward) in rest space
+        float strands = fn(vec3(vRest.x * 260.0, vRest.y * 55.0, vRest.z * 260.0));
+        float fine = fn(vec3(vRest.x * 620.0, vRest.y * 120.0, vRest.z * 620.0));
         float clump = fn(vRest * 45.0);
-        diffuseColor.rgb *= mix(1.0, 0.55 + 0.9 * strands * (0.55 + 0.45 * clump), vFur);
-        // wrinkled leathery skin
+        float fiber = 0.5 + 0.75 * strands * (0.55 + 0.45 * clump) + 0.25 * (fine - 0.5);
+        // ---- wounds / blood / dust (health driven) ----
+        float field = fn(vRest * 13.0) * 0.55 + fn(vRest * 31.0) * 0.3 + fn(vRest * 77.0) * 0.15;
+        float sev = uWound * (0.55 + 0.75 * vWB);
+        float m = smoothstep(1.02 - sev, 1.08 - sev, field + vWB * 0.18);
+        float core = smoothstep(1.1 - sev * 0.85, 1.16 - sev * 0.85, field + vWB * 0.18);
+        // localized hit splats
+        float splat = 0.0;
+        for (int i = 0; i < 10; i++) {
+          float d = distance(vRest, uHits[i].xyz) + (fn(vRest * 90.0) - 0.5) * 0.03;
+          splat = max(splat, uHits[i].w * (1.0 - smoothstep(0.035, 0.085, d)));
+        }
+        m = max(m, splat);
+        core = max(core, splat * smoothstep(0.5, 0.9, splat) * step(0.03, 0.085 - distance(vRest, vRest)));
+        // claw-rake cuts across shoulders and arms
+        float cut = (1.0 - smoothstep(0.0, 0.025, abs(fn(vec3(vRest.x * 9.0 + vRest.y * 30.0, vRest.z * 9.0, 2.0)) - 0.5)))
+                    * smoothstep(0.35, 0.8, uWound) * vWB * step(0.55, fn(vRest * 6.0));
+        gWoundCore = max(core, cut * 0.8);
+        gMat = m;
+        vec3 fur = diffuseColor.rgb * mix(1.0, fiber, vFur);
+        // dust and grime from the fight (all over, more as he weakens)
+        float dust = smoothstep(0.35, 0.9, fn(vRest * 8.0 + 4.0)) * (0.15 + 0.6 * uWound);
+        fur = mix(fur, vec3(0.085, 0.075, 0.065), dust * 0.55 * vFur);
+        vec3 matted = vec3(0.07, 0.012, 0.01) * (0.7 + 0.6 * fiber);
+        vec3 wound = mix(vec3(0.16, 0.01, 0.008), vec3(0.28, 0.035, 0.03), fn(vRest * 140.0));
+        fur = mix(fur, matted, m * 0.9);
+        fur = mix(fur, wound, gWoundCore);
+        // wrinkled leathery skin on face, chest, hands and feet
         float wr = fn(vRest * vec3(120.0, 380.0, 120.0));
-        diffuseColor.rgb *= mix(0.85 + 0.25 * wr, 1.0, vFur);`)
+        diffuseColor.rgb = mix(fur * (0.85 + 0.25 * wr), fur, vFur);`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
-        roughnessFactor = mix(0.42 + 0.2 * wr, 0.8 + 0.15 * strands, vFur);`)
+        roughnessFactor = mix(0.42 + 0.2 * wr, 0.78 + 0.15 * strands, vFur);
+        roughnessFactor = mix(roughnessFactor, 0.42, gMat * 0.7);
+        roughnessFactor = mix(roughnessFactor, 0.22, gWoundCore);`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
         {
-          // perturb normal with strand noise for a furry, non-plastic response
+          // strand noise: furry, non-plastic response (flattened where fur is matted with blood)
           vec3 g = vec3(fn(vRest * 220.0 + 1.3), fn(vRest * 220.0 + 5.1), fn(vRest * 220.0 + 9.7)) - 0.5;
-          normal = normalize(normal + g * (0.55 * vFur + 0.18 * (1.0 - vFur)));
+          normal = normalize(normal + g * (0.6 * vFur * (1.0 - gMat * 0.6) + 0.18 * (1.0 - vFur)));
         }`)
       .replace('#include <lights_fragment_maps>', `#include <lights_fragment_maps>
-        // fur scatters the sky softly instead of mirroring it; skin keeps a leathery sheen
-        radiance *= mix(0.7, 0.18, vFur);
+        // fur scatters the sky softly; skin and wet blood keep a sheen
+        radiance *= mix(mix(0.7, 0.16, vFur), 1.4, max(gWoundCore, gMat * 0.5));
         iblIrradiance *= 0.85;`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
         {
-          // soft rim sheen: fur catches light at grazing angles
-          float rim = pow(1.0 - clamp(abs(dot(normalize(vVN), vec3(0.0, 0.0, 1.0))), 0.0, 1.0), 3.5);
-          totalEmissiveRadiance += (diffuseColor.rgb * 0.35 + vec3(0.016, 0.013, 0.01)) * rim * vFur;
+          float ndv = clamp(abs(dot(normalize(vVN), vec3(0.0, 0.0, 1.0))), 0.0, 1.0);
+          float rim = pow(1.0 - ndv, 3.2);
+          // moonlit rim keeps the silhouette readable at night; healthy fur has more sheen
+          float health = 1.0 - uWound;
+          vec3 moonRim = vec3(0.045, 0.06, 0.1) * (0.6 + 0.6 * health);
+          totalEmissiveRadiance += (diffuseColor.rgb * 0.3 + moonRim) * rim * vFur * (1.0 - gMat * 0.6);
+          // feeding: a warm wave of renewed sheen runs over the fur
+          totalEmissiveRadiance += vec3(0.32, 0.2, 0.09) * uHeal * (0.35 + rim) * vFur * (0.6 + 0.4 * fn(vRest * 20.0 + uHeal * 3.0));
         }`);
   };
-  mat.customProgramCacheKey = () => 'gorilla-skin-v2' + (shell ? '-shell' : '');
-  return mat;
+  mat.customProgramCacheKey = () => 'gorilla-skin-v3';
+  return patchCityLight(mat, { strength: 1.4, key: 'gorilla' });
 }
 
 export function createSkeleton() {

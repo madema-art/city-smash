@@ -105,6 +105,13 @@ export class Building {
     this.infoAttr = new THREE.InstancedBufferAttribute(this.info, 3);
     this.infoAttr.setUsage(THREE.DynamicDrawUsage);
     geo.setAttribute('aInfo', this.infoAttr);
+    // electrical state per cell (1 steady, 0 dead, between = failing/flickering)
+    this.power = new Float32Array(N).fill(1);
+    this.powAttr = new THREE.InstancedBufferAttribute(this.power, 1);
+    this.powAttr.setUsage(THREE.DynamicDrawUsage);
+    geo.setAttribute('aPow', this.powAttr);
+    this.blackout = -1; // floor index currently failing during a cascade (-1 = none)
+    this.blackoutT = 0;
     this.geo = geo;
     this.material = createBuildingMaterial(def.style);
     this.mesh = new THREE.InstancedMesh(geo, this.material, N);
@@ -249,6 +256,12 @@ export class Building {
     this._refreshCell(i);
     this._refreshNeighbors(i);
     this.structDirty = true;
+    this.power[i] = 0;
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const X = x + dx, Z = z + dz;
+      if (X >= 0 && Z >= 0 && X < this.nx && Z < this.nz) this.setPower(this.idx(X, y, Z), 0.55);
+    }
+    this.powAttr.needsUpdate = true;
     if (effects > 0) this.spawnBreakEffects(i, dir, intensity, effects);
     for (const p of this.props) if (p.cell === i && !p.gone) this.ctx.props.detachRoofProp(p, this);
     return true;
@@ -329,6 +342,8 @@ export class Building {
         const nd = Math.min(1, 1 - this.hp[i] / (y === 0 ? 1.5 : y < 3 ? 1.25 : 1.0) + 0.1);
         this.dmg[i] = Math.max(before, nd);
         this.info[i * 3 + 1] = this.dmg[i];
+        // damaged rooms: lights flicker, then die
+        this.setPower(i, nd > 0.6 ? 0 : nd > 0.3 ? 0.45 : 0.85);
         this.infoAttr.needsUpdate = true;
         this._refreshCell(i);
         res.damaged++;
@@ -354,6 +369,30 @@ export class Building {
   }
 
   // ---------- structural evaluation ----------
+  // Power only ever decreases: the city never magically repairs itself.
+  setPower(i, v) {
+    if (v < this.power[i]) { this.power[i] = v; this.powAttr.needsUpdate = true; }
+  }
+
+  setFloorPower(f, v) {
+    for (let z = 0; z < this.nz; z++) for (let x = 0; x < this.nx; x++) this.setPower(this.idx(x, f, z), v);
+  }
+
+  // Electrical response to structural state: floors losing their supports brown out.
+  _updatePowerFromStructure() {
+    for (let f = 0; f < this.ny; f++) {
+      if (!this.floorOrig[f]) continue;
+      const r = this.floorAlive[f] / this.floorOrig[f];
+      if (r < 0.6) { this.setFloorPower(f, 0); if (f + 1 < this.ny) this.setFloorPower(f + 1, 0.5); }
+      else if (r < 0.88) this.setFloorPower(f, 0.6);
+    }
+    if (this.warn > 0.3 && this.warnFloor >= 0) {
+      for (let f = Math.max(0, this.warnFloor - 1); f < Math.min(this.ny, this.warnFloor + 3); f++) this.setFloorPower(f, 0.75);
+    }
+    // badly wrecked buildings lose power altogether, floor by floor from the top
+    if (this.blackout < 0 && this.destroyedFraction > 0.38) { this.blackout = this.ny - 1; this.blackoutT = 0; }
+  }
+
   analyze() {
     this.structDirty = false;
     // 1) load-bearing floor failure (lowest failing floor wins)
@@ -381,6 +420,7 @@ export class Building {
     }
     // 2) connectivity to the ground: anything floating falls
     this._dropIslands();
+    this._updatePowerFromStructure();
   }
 
   // True when the two outer rows along one face of floor f are mostly gone.
@@ -487,6 +527,23 @@ export class Building {
 
   update(dt) {
     if (this.structDirty) this.analyze();
+    if (this.blackout >= 0) {
+      // cascading electrical failure: floors flicker and die one after another, with sparks
+      this.blackoutT -= dt;
+      if (this.blackoutT <= 0) {
+        this.blackoutT = 0.12 + Math.random() * 0.12;
+        const f = this.blackout;
+        this.setFloorPower(f, 0);
+        if (f > 0) this.setFloorPower(f - 1, 0.4);
+        const side = Math.floor(Math.random() * 4);
+        const sx = side < 2 ? this.x0 + (side ? this.width : 0) : this.x0 + Math.random() * this.width;
+        const sz = side >= 2 ? this.z0 + (side === 3 ? this.depth : 0) : this.z0 + Math.random() * this.depth;
+        if (Math.random() < 0.5) this.ctx.fx.sparks(new THREE.Vector3(sx, (f + 0.5) * H, sz), new THREE.Vector3(0, -0.3, 0), 10, [1, 0.85, 0.5]);
+        if (f % 3 === 0) this.ctx.events.emit('powerFail', { x: sx, y: (f + 0.5) * H, z: sz });
+        this.blackout--;
+        if (this.blackout < 0) this.blackout = -2; // done
+      }
+    }
     for (let k = this.sections.length - 1; k >= 0; k--) {
       const s = this.sections[k];
       s.update(dt);

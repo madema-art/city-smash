@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { makeRockGeometry } from '../fx/Ballistic.js';
 import { DESTRUCTION } from '../config.js';
+import { patchCityLight } from '../render/CityLights.js';
 
 const _m = new THREE.Matrix4();
 const _q = new THREE.Quaternion();
@@ -15,7 +16,7 @@ export class RubbleField {
   constructor(scene, extent = 300, res = 2) {
     this.cap = DESTRUCTION.maxRubble;
     const geo = makeRockGeometry(0, 7);
-    const mat = new THREE.MeshStandardMaterial({ roughness: 0.95, metalness: 0.0, flatShading: true });
+    const mat = patchCityLight(new THREE.MeshStandardMaterial({ roughness: 0.95, metalness: 0.0, flatShading: true }), { key: 'rubble' });
     this.mesh = new THREE.InstancedMesh(geo, mat, this.cap);
     this.mesh.count = 0;
     this.mesh.castShadow = true;
@@ -89,7 +90,7 @@ export class DebrisSystem {
     this.events = events;
     this.cap = DESTRUCTION.maxPhysicsDebris;
     const geo = makeRockGeometry(0, 3);
-    const mat = new THREE.MeshStandardMaterial({ roughness: 0.92, metalness: 0.0, flatShading: true });
+    const mat = patchCityLight(new THREE.MeshStandardMaterial({ roughness: 0.92, metalness: 0.0, flatShading: true }), { key: 'debris' });
     this.mesh = new THREE.InstancedMesh(geo, mat, this.cap);
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.mesh.castShadow = true;

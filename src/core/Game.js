@@ -19,6 +19,7 @@ import { Military } from '../enemies/Military.js';
 import { WindowPeople } from '../city/WindowPeople.js';
 import { Audio } from '../audio/Audio.js';
 import { HUD } from '../ui/HUD.js';
+import { CityLights } from '../render/CityLights.js';
 import { DESTRUCTION } from '../config.js';
 
 const _v = new THREE.Vector3();
@@ -31,7 +32,9 @@ export class Game {
     this.renderer = new Renderer(container);
     this.input = new Input(this.renderer.dom);
     this.audio = new Audio();
-    this.hud = new HUD();
+    this.hud = new HUD(params.get('debug') === '1');
+    this.fadeEl = document.getElementById('fade');
+    this.restartHold = 0;
     this.state = 'loading';
     this.level = null;
     this.timeScale = 1;
@@ -76,6 +79,9 @@ export class Game {
   _bindUI() {
     const overlay = document.getElementById('overlay');
     document.getElementById('start-btn').addEventListener('click', () => this.begin());
+    this.renderer.dom.addEventListener('mousedown', () => {
+      if ((this.state === 'won' || this.state === 'lost') && this.level && this.level.endReady) { this.restart(); this.begin(); }
+    });
     document.getElementById('restart-btn').addEventListener('click', () => { this.restart(); this.begin(); });
     overlay.addEventListener('click', (e) => {
       if (this.state === 'paused' && e.target === overlay) this.begin();
@@ -85,11 +91,8 @@ export class Game {
       if (!this.input.locked && this.state === 'playing' && !this.noLock && this.input.lastDevice !== 'pad') this.pause();
     });
     window.addEventListener('keydown', (e) => {
-      if (e.code === 'KeyR' && (this.state === 'playing' || this.state === 'paused' || this.state === 'won' || this.state === 'lost')) {
-        this.restart();
-        this.begin();
-      }
-      if (e.code === 'Enter' && (this.state === 'won' || this.state === 'lost')) { this.restart(); this.begin(); }
+      if (['Enter', 'Space', 'KeyR'].includes(e.code) && (this.state === 'won' || this.state === 'lost') && this.level && this.level.endReady) { this.restart(); this.begin(); }
+      if (e.code === 'KeyR' && this.state === 'paused') { this.restart(); this.begin(); }
       if (e.code === 'KeyM') this.audio.master && (this.audio.master.gain.value = this.audio.master.gain.value > 0 ? 0 : 0.8);
     });
   }
@@ -102,7 +105,7 @@ export class Game {
     this.state = 'playing';
     this._showPanel(null);
     this.hud.show(true);
-    if (!this.level.introDone) {
+    if (!this.level.introDone && this.hud.enabled) {
       this.level.introDone = true;
       this.hud.callout('SMASH THE CITY!', 'good');
       this.hud.hint(this.input.lastDevice === 'pad'
@@ -138,6 +141,7 @@ export class Game {
       hitStop: (t) => { this.hitStopT = Math.max(this.hitStopT, t); },
       input: this.input,
     };
+    ctx.lights = new CityLights();
     ctx.fx = new FX(root, this.renderer.envMap);
     ctx.rubble = new RubbleField(root);
     ctx.fx.setFloor((x, z) => ctx.rubble.heightAt(x, z) * 0.8);
@@ -170,6 +174,7 @@ export class Game {
       }
     });
     ctx.city.scorchTex.dispose();
+    ctx.lights.dispose();
     ctx.events.clear();
     ctx.physics.dispose();
     for (const [, L] of this.audio.loops) L.seen = false;
@@ -182,6 +187,7 @@ export class Game {
     this.startLevel();
     this.hitStopT = 0;
     document.getElementById('callouts').innerHTML = '';
+    this.fadeEl.style.opacity = '0';
   }
 
   // ---------------- events → audio / HUD / systems ----------------
@@ -283,7 +289,7 @@ export class Game {
       A.concrete(e, 0.5);
     });
     E.on('levelUp', (e) => {
-      if (e.name) { hud.callout(e.name, 'warn'); A.ui('level'); }
+      if (e.name) hud.callout(e.name, 'warn');
       A.setSiren(e.level);
     });
     E.on('kill', (e) => {
@@ -314,6 +320,7 @@ export class Game {
     this.fpsAvg = this.fpsAvg * 0.95 + (1 / Math.max(rawDt, 1e-4)) * 0.05;
     this.input.beginFrame(rawDt);
     this._padSystem();
+    this._restartHold(rawDt);
     const lvl = this.level;
     if (!lvl) return;
     const ctx = lvl.ctx;
@@ -334,8 +341,8 @@ export class Game {
     if (st === 'title' && (I.padHit('jump') || I.padHit('pause'))) this.begin(true);
     else if (st === 'playing' && I.padHit('pause')) { this.pause(); }
     else if (st === 'paused' && (I.padHit('pause') || I.padHit('jump'))) this.begin(true);
-    else if ((st === 'won' || st === 'lost') && this.level && this.level.endShown && (I.padHit('jump') || I.padHit('pause'))) { this.restart(); this.begin(true); }
-    if (I.padHit('restart') && st !== 'title' && st !== 'loading') { this.restart(); this.begin(true); }
+    else if (st === 'paused' && I.padHit('restart')) { this.restart(); this.begin(true); }
+    else if ((st === 'won' || st === 'lost') && this.level && this.level.endReady && (I.padHit('jump') || I.padHit('pause') || I.padHit('restart'))) { this.restart(); this.begin(true); }
   }
 
   // ---- test hooks ----
@@ -365,6 +372,8 @@ export class Game {
     ctx.city.update(dt);
     ctx.props.update(dt);
     ctx.fx.update(dt, this.renderer.scene.fog);
+    ctx.lights.update(dt);
+    sharedBuildingUniforms.uTime.value += dt;
     this.renderer.updateShadowFocus(g.pos);
     sharedBuildingUniforms.uFadeOn.value = 0;
   }
@@ -376,7 +385,8 @@ export class Game {
     ctx.budget.physics = 6; ctx.budget.chips = 12; ctx.budget.glass = 10; ctx.budget.dust = 5;
     const g = ctx.gorilla;
     const input = this.state === 'playing' ? this.input : NULL_INPUT;
-    ctx.cameraRig.update(rawDt, input, g);
+    if ((this.state === 'won' || this.state === 'lost') && lvl.cine) this._cinematicCam(rawDt, lvl);
+    else ctx.cameraRig.update(rawDt, input, g);
     g.update(dt, input, ctx.cameraRig);
     if (g.heldFollow) g.heldFollow.follow(g);
     const camPos = this.renderer.camera.position;
@@ -391,6 +401,8 @@ export class Game {
     ctx.props.update(dt);
     ctx.rubble.update();
     ctx.fx.update(dt, this.renderer.scene.fog);
+    ctx.lights.update(dt);
+    sharedBuildingUniforms.uTime.value += dt;
     // building fade around the line of sight
     sharedBuildingUniforms.uFadeOn.value = 1;
     sharedBuildingUniforms.uCamPos.value.copy(camPos);
@@ -426,31 +438,109 @@ export class Game {
     });
     // win / lose
     if (this.state === 'playing') {
-      if (destroyed >= DESTRUCTION.winPercent) { this.state = 'won'; lvl.endT = 0; this.hud.callout('CITY FLATTENED!', 'good'); this.audio.ui('win'); }
-      else if (!g.alive) { this.state = 'lost'; lvl.endT = 0; this.audio.ui('lose'); }
+      if (destroyed >= DESTRUCTION.winPercent) this._beginVictory(lvl);
+      else if (!g.alive) this._beginDefeat(lvl);
     } else if (this.state === 'won' || this.state === 'lost') {
-      lvl.endT += rawDt;
-      if (lvl.endT > 3 && !lvl.endShown) {
-        lvl.endShown = true;
-        this._showEnd(this.state === 'won', destroyed, lvl);
-      }
+      this._endSequence(rawDt, lvl);
     }
   }
 
-  _showEnd(won, destroyed, lvl) {
-    const s = lvl.ctx.stats;
-    document.getElementById('end-title').textContent = won ? 'CITY FLATTENED' : 'TAKEN DOWN';
-    document.getElementById('end-sub').textContent = won
-      ? 'The skyline will never be the same. All hail the silverback.'
-      : 'The army got lucky this time. The city still stands… barely.';
-    const t = Math.floor(lvl.time);
-    document.getElementById('end-stats').innerHTML = `
-      Score <b>${Math.round(lvl.score).toLocaleString()}</b><br>
-      Destroyed <b>${destroyed.toFixed(1)}%</b> in <b>${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}</b><br>
-      Buildings toppled <b>${s.collapsed}</b> · Snacks <b>${s.eaten}</b><br>
-      Soldiers <b>${s.soldiers}</b> · Tanks <b>${s.tanks}</b> · Choppers <b>${s.helis}</b>`;
+  // ---------------- endings (no text: the world tells the story) ----------------
+  _beginVictory(lvl) {
+    const ctx = lvl.ctx;
+    this.state = 'won';
+    lvl.endT = 0;
+    lvl.endReady = false;
+    lvl.endEvents = {};
+    ctx.military.retreat = true;
+    ctx.city.blackoutWave(ctx.gorilla.pos);
+    ctx.events.emit('victory', { p: ctx.gorilla.pos.clone() });
+    this._beginCinematic(lvl, true);
+  }
+
+  _beginDefeat(lvl) {
+    const ctx = lvl.ctx;
+    this.state = 'lost';
+    lvl.endT = 0;
+    lvl.endReady = false;
+    lvl.endEvents = {};
+    this._beginCinematic(lvl, false);
+  }
+
+  _beginCinematic(lvl, won) {
+    const cam = this.renderer.camera;
+    const g = lvl.ctx.gorilla;
+    const off = cam.position.clone().sub(g.pos);
+    lvl.cine = { won, a: Math.atan2(off.x, off.z), from: cam.position.clone(), fromLook: g.chest, blend: 0 };
     document.exitPointerLock?.();
-    this._showPanel('end-panel');
+  }
+
+  _endSequence(dt, lvl) {
+    const ctx = lvl.ctx;
+    const g = ctx.gorilla;
+    lvl.endT += dt;
+    const t = lvl.endT;
+    const once = (k, at, fn) => { if (t >= at && !lvl.endEvents[k]) { lvl.endEvents[k] = true; fn(); } };
+    if (lvl.cine.won) {
+      // a last landmark gives way as the power dies across the city
+      once('topple', 1.2, () => {
+        let best = null, bd = 1e9;
+        for (const b of ctx.city.buildings) {
+          if (b.height < 44 || b.destroyedFraction > 0.25 || b.collapsedOnce) continue;
+          const d = Math.hypot(b.cx - g.pos.x, b.cz - g.pos.z);
+          if (d > 60 && d < 260 && d < bd) { bd = d; best = b; }
+        }
+        if (best) best._startFloorCollapse(Math.min(2, best.ny - 2));
+      });
+      once('roar', 2.0, () => {
+        if (g.state === 'climb') g._start('climbRoar'); else if (g.state !== 'air') g._start('roar');
+      });
+      once('ready', 6.5, () => { lvl.endReady = true; });
+    } else {
+      once('cease', 2.5, () => { ctx.military.ceaseFire = true; });
+      once('ready', 4.5, () => { lvl.endReady = true; });
+      // the picture slowly settles toward darkness, but never fully: the aftermath stays visible
+      this.fadeEl.style.opacity = Math.min(0.55, Math.max(0, (t - 5) / 6) * 0.55).toFixed(3);
+    }
+  }
+
+  // Slow, controlled orbit that frames the monster against the skyline (input-free endings only).
+  _cinematicCam(dt, lvl) {
+    const c = lvl.cine;
+    const g = lvl.ctx.gorilla;
+    const cam = this.renderer.camera;
+    c.blend = Math.min(1, c.blend + dt / 2.2);
+    c.a += dt * (c.won ? 0.12 : 0.07);
+    const dist = c.won ? 46 : 30;
+    const height = c.won ? 6 : 9;
+    const want = new THREE.Vector3(g.pos.x + Math.sin(c.a) * dist, g.pos.y + height, g.pos.z + Math.cos(c.a) * dist);
+    // stay out of buildings: pull in along the line to the monster if needed
+    const look = g.pos.clone(); look.y += c.won ? 13 : 3;
+    const dir = want.clone().sub(look);
+    const len = dir.length(); dir.normalize();
+    const hit = lvl.ctx.city.raycast(look, dir, len, 1.5);
+    if (hit > 0) want.copy(look).addScaledVector(dir, Math.max(6, hit - 2));
+    const floor = lvl.ctx.city.groundAt(want.x, want.z, want.y + 2) + 1.5;
+    if (want.y < floor) want.y = floor;
+    const e = c.blend * c.blend * (3 - 2 * c.blend);
+    cam.position.lerpVectors(c.from, want, e);
+    const lk = c.fromLook.clone().lerp(look, e);
+    cam.lookAt(lk);
+    cam.fov += ((c.won ? 52 : 48) - cam.fov) * Math.min(1, dt * 1.5);
+    cam.updateProjectionMatrix();
+  }
+
+  // Hold R / Back for a second to restart mid-game (the picture fades to black as you hold).
+  _restartHold(dt) {
+    if (this.state !== 'playing') { if (this.restartHold > 0) { this.restartHold = 0; this.fadeEl.style.opacity = '0'; } return; }
+    const held = this.input.held.has('KeyR') || this.input.padHeld.has(8);
+    this.restartHold = held ? this.restartHold + dt : Math.max(0, this.restartHold - dt * 3);
+    this.fadeEl.style.opacity = Math.min(1, this.restartHold / 1.1).toFixed(3);
+    if (this.restartHold >= 1.1) {
+      this.restartHold = 0;
+      this.restart();
+      this.begin(this.noLock);
+    }
   }
 
   _render(dt) {

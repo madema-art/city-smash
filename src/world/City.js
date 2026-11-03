@@ -3,6 +3,7 @@ import { WORLD, CELL } from '../config.js';
 import { Building } from './Building.js';
 import { STYLES, createBuildingMaterial } from './BuildingMaterial.js';
 import { mulberry32 } from '../core/util.js';
+import { cityLightUniforms, CITY_LIGHT_GLSL } from '../render/CityLights.js';
 
 const S = CELL.size;
 const H = CELL.height;
@@ -57,6 +58,7 @@ function groundMaterial(scorchTex) {
     sh.uniforms.uScorch = { value: scorchTex };
     sh.uniforms.uPitch = { value: PITCH };
     sh.uniforms.uHalf = { value: HALF };
+    Object.assign(sh.uniforms, cityLightUniforms);
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vGW;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGW = (modelMatrix * vec4(position,1.0)).xyz;');
@@ -67,6 +69,8 @@ function groundMaterial(scorchTex) {
         float gn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.-2.*f); return mix(mix(gh(i),gh(i+vec2(1,0)),f.x), mix(gh(i+vec2(0,1)),gh(i+vec2(1,1)),f.x), f.y); }
         float gf(vec2 p){ float s=0., a=.5; for(int i=0;i<4;i++){ s+=a*gn(p); p*=2.1; a*=.5; } return s; }
         float band(float x, float lo, float hi){ return step(lo, x) * step(x, hi); }
+        ${CITY_LIGHT_GLSL}
+        float gWet = 0.0;
       `)
       .replace('#include <color_fragment>', `#include <color_fragment>
         vec2 w = vGW.xz;
@@ -123,8 +127,19 @@ function groundMaterial(scorchTex) {
         col *= 1.0 - crack * 0.8;
         col = mix(col, vec3(0.34, 0.31, 0.27), sc.b * 0.6);
         diffuseColor.rgb = col;
+        // damp night streets: puddles collect on the asphalt and in gutters
+        float pud = smoothstep(0.55, 0.72, gf(w * 0.08 + 13.0)) + band(dc.x, 6.2, 7.0) * 0.6 + band(dc.y, 6.2, 7.0) * 0.6;
+        gWet = clamp(road * (0.35 + pud), 0.0, 1.0) * (1.0 - sc.b);
+        diffuseColor.rgb *= 1.0 - gWet * 0.35;
       `)
-      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = 0.9;');
+      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(0.92, 0.32, gWet);')
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+        {
+          vec3 L = cityLightAt(vGW);
+          totalEmissiveRadiance += diffuseColor.rgb * L;
+          // wet sheen: lamp pools glint on the damp road
+          totalEmissiveRadiance += L * gWet * 0.18;
+        }`);
   };
   return mat;
 }
@@ -135,6 +150,8 @@ export class City {
     this.rng = mulberry32(seed);
     this.buildings = [];
     this.parks = [];
+    this.shopLights = [];
+    this.shopCheck = 0;
     this.totalCells = 0;
 
     // scorch map: r = burn, g = cracks, b = dust
@@ -249,10 +266,69 @@ export class City {
           this.buildings.push(b);
           this.totalCells += b.totalCells;
           this._roofProps(b, rng);
+          this._facadeProps(b, rng);
         }
       }
     }
     for (const b of this.buildings) b.buildColliders();
+  }
+
+  // Fire escapes, balconies and shop-front light: details bolted to individual facade cells, so
+  // they fall off when their cell is smashed and ride along with collapsing sections.
+  _facadeProps(b, rng) {
+    const props = this.ctx.props;
+    const t = b.style.type;
+    const faces = [
+      { nx: 1, nz: 0, bit: 1 }, { nx: -1, nz: 0, bit: 2 }, { nx: 0, nz: 1, bit: 16 }, { nx: 0, nz: -1, bit: 32 },
+    ];
+    const along = (f) => (f.nx !== 0 ? b.nz : b.nx);
+    const cellOn = (f, k, y) => {
+      if (f.nx !== 0) return b.idx(f.nx > 0 ? b.nx - 1 : 0, y, k);
+      return b.idx(k, y, f.nz > 0 ? b.nz - 1 : 0);
+    };
+    const place = (type, f, k, y, out, scale = 1) => {
+      const i = cellOn(f, k, y);
+      if (!b.exists[i] || !(b.mask[i] & f.bit)) return;
+      const [x, , z] = b.coords(i);
+      let lx = (x + 0.5) * S, lz = (z + 0.5) * S;
+      if (f.nx !== 0) lx = f.nx > 0 ? (x + 1) * S + out : x * S - out;
+      else lz = f.nz > 0 ? (z + 1) * S + out : z * S - out;
+      props.addRoof(type, b, i, lx, y * H + 0.15, lz, Math.atan2(f.nx, f.nz), scale);
+    };
+    if (t === STYLES.BRICK) {
+      // a fire-escape stack on one or two faces
+      const pickF = faces.filter(() => rng() < 0.5).slice(0, 2);
+      if (!pickF.length) pickF.push(faces[Math.floor(rng() * 4)]);
+      for (const f of pickF) {
+        const n = along(f);
+        const k0 = Math.floor(rng() * Math.max(1, n - 1));
+        for (const k of [k0, k0 + 1 < n ? k0 + 1 : k0]) {
+          if (k === k0 && k0 + 1 < n && rng() < 0.4) continue;
+          for (let y = 1; y < b.ny - 1; y++) place('fireescape', f, k, y, 0.05);
+          break;
+        }
+      }
+    }
+    if (t === STYLES.BRICK || t === STYLES.SHOP || (t === STYLES.RIBBON && rng() < 0.4)) {
+      for (const f of faces) {
+        for (let k = 0; k < along(f); k++) for (let y = 1; y < b.ny - 1; y++) {
+          if (rng() < 0.09) place('balcony', f, k, y, 0.02);
+        }
+      }
+    }
+    // light from shop fronts and lobbies spills onto the sidewalk (dies with the cell's power)
+    for (const f of faces) {
+      for (let k = 0; k < along(f); k += 2) {
+        const i = cellOn(f, k, 0);
+        if (!b.exists[i] || !(b.mask[i] & f.bit)) continue;
+        const [x, , z] = b.coords(i);
+        let wx = b.x0 + (x + 0.5) * S, wz = b.z0 + (z + 0.5) * S;
+        wx += f.nx * (S * 0.5 + 3); wz += f.nz * (S * 0.5 + 3);
+        const col = [0xffc98a, 0xbfd9ff, 0xffe2b8, 0xff8fb0, 0x9effe0][Math.floor(rng() * 5)];
+        const src = this.ctx.lights.addStatic(wx, wz, col, t === STYLES.SHOP ? 0.4 : 0.26, 8);
+        this.shopLights.push({ src, b, i });
+      }
+    }
   }
 
   _roofProps(b, rng) {
@@ -368,6 +444,7 @@ export class City {
         info[i * 3 + 2] = Math.random();
       });
       geo.setAttribute('aInfo', new THREE.InstancedBufferAttribute(info, 3));
+      geo.setAttribute('aPow', new THREE.InstancedBufferAttribute(new Float32Array(g.items.length).fill(1), 1));
       mesh.castShadow = false;
       mesh.receiveShadow = true;
       mesh.computeBoundingSphere();
@@ -398,6 +475,16 @@ export class City {
         props.addStreet('lamp', c + 8.6, t + 10, -Math.PI / 2, 1);
         props.addStreet('lamp', t, c - 8.6, 0, 1);
         props.addStreet('lamp', t + 10, c + 8.6, Math.PI, 1);
+      }
+      for (let t = -ext + 26; t < ext - 10; t += 43) {
+        if (this._nearIntersection(t, 18)) continue;
+        if (rng() < 0.45) props.addStreet('busstop', c + 9.6, t + 5, -Math.PI / 2, 1);
+        if (rng() < 0.45) props.addStreet('busstop', t + 5, c - 9.6, 0, 1);
+      }
+      for (let t = -ext + 17; t < ext - 10; t += 19) {
+        if (this._nearIntersection(t, 13)) continue;
+        if (rng() < 0.6) props.addStreet('trashcan', c - 8.2, t + 2, 0, 1);
+        if (rng() < 0.6) props.addStreet('trashcan', t + 2, c + 8.2, 0, 1);
       }
       for (let t = -ext + 20; t < ext - 10; t += 15) {
         if (this._nearIntersection(t, 16)) continue;
@@ -507,8 +594,31 @@ export class City {
     return (d / this.totalCells) * 100;
   }
 
+  // Victory: power fails across the city in a rolling wave outward from the monster.
+  blackoutWave(origin) {
+    this.wave = { t: 0 };
+    for (const b of this.buildings) b.blackoutDelay = Math.hypot(b.cx - origin.x, b.cz - origin.z) / 70 + Math.random() * 0.6;
+    this.waveLamps = this.ctx.props.types.lamp.items.filter((it) => it.alive).map((it) => ({ it, d: Math.hypot(it.x - origin.x, it.z - origin.z) / 85 + Math.random() * 0.4 }));
+  }
+
   update(dt) {
     for (const b of this.buildings) b.update(dt);
+    if (this.wave) {
+      this.wave.t += dt;
+      for (const b of this.buildings) {
+        if (b.blackoutDelay !== undefined && b.blackoutDelay <= this.wave.t && b.blackout === -1) b.blackout = b.ny - 1;
+      }
+      for (const l of this.waveLamps) {
+        if (l.it.alive && !l.out && l.d <= this.wave.t) { l.out = true; this.ctx.props.lampOutQuiet(l.it); }
+      }
+    }
+    this.shopCheck -= dt;
+    if (this.shopCheck <= 0) {
+      this.shopCheck = 0.3;
+      for (const s of this.shopLights) {
+        if (s.src.on > 0 && (!s.b.alive[s.i] || s.b.power[s.i] < 0.3)) this.ctx.lights.setOn(s.src, 0);
+      }
+    }
     this.scorchTimer -= dt;
     if (this.scorchDirty && this.scorchTimer <= 0) {
       this.scorchTex.needsUpdate = true;

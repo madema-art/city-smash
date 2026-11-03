@@ -1,8 +1,10 @@
 import { GORILLA, DESTRUCTION } from '../config.js';
 
-// DOM heads-up display: health, destruction meter, military threat, score and callouts.
+// Developer-only heads-up display. City Smash is played with NO on-screen UI: health, escalation and
+// destruction are communicated by the world. This overlay exists only behind ?debug=1.
 export class HUD {
-  constructor() {
+  constructor(enabled = false) {
+    this.enabled = enabled;
     const $ = (id) => document.getElementById(id);
     this.el = {
       hud: $('hud'), hf: $('health-fill'), hg: $('health-ghost'), ht: $('health-text'),
@@ -17,9 +19,10 @@ export class HUD {
     this.hintTimer = 0;
   }
 
-  show(v) { this.el.hud.classList.toggle('hidden', !v); }
+  show(v) { this.el.hud.classList.toggle('hidden', !(v && this.enabled)); }
 
   callout(text, cls = '') {
+    if (!this.enabled) return;
     const d = document.createElement('div');
     d.className = `callout ${cls}`;
     d.textContent = text;
@@ -29,11 +32,13 @@ export class HUD {
   }
 
   hint(text, secs = 4) {
+    if (!this.enabled) return;
     this.el.hint.innerHTML = text;
     this.hintTimer = secs;
   }
 
   update(dt, s) {
+    if (!this.enabled) return;
     const hp = Math.max(0, s.health) / GORILLA.maxHealth * 100;
     if (this.last.hp !== Math.round(hp)) {
       this.el.hf.style.width = `${hp}%`;

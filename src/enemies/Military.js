@@ -5,6 +5,7 @@ import { Held } from '../core/Held.js';
 import { part, merge, box, cyl, sphere } from '../core/geom.js';
 import { pick, clamp, dampAngle, angleDiff } from '../core/util.js';
 import { GORILLA } from '../config.js';
+import { patchCityLight } from '../render/CityLights.js';
 
 const _v = new THREE.Vector3();
 const _v2 = new THREE.Vector3();
@@ -95,7 +96,7 @@ export class Military {
     this.spawnCd = { soldier: 2, tank: 6, heli: 3 };
     this.kills = { soldiers: 0, tanks: 0, helis: 0 };
     this.suppressT = 0;
-    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7, metalness: 0.25 });
+    const mat = patchCityLight(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0.35 }));
     this.mat = mat;
     this.tankGeo = tankGeometry();
     this.heliGeo = heliGeometry();
@@ -136,7 +137,7 @@ export class Military {
     }
     const L = LEVELS[this.level];
     for (const k in this.spawnCd) this.spawnCd[k] -= dt;
-    if (g && g.alive) {
+    if (g && g.alive && !this.retreat) {
       const aliveSoldiers = this.soldiers.filter((s) => s.state !== 'dead' && s.state !== 'held').length;
       if (aliveSoldiers < L.soldiers && this.spawnCd.soldier <= 0) {
         this._spawnSquad(Math.min(L.soldiers - aliveSoldiers, 3 + Math.floor(Math.random() * 3)));
@@ -285,7 +286,7 @@ export class Military {
       if (!g.alive) { s.anim = 'idle'; continue; }
       // trampled
       if (d < GORILLA.radius + 0.5 && Math.abs(s.y - gp.y) < 3 && g.speed > 2) { this._killSoldier(s, true); continue; }
-      const panic = d < 16 || this.suppressT > 0 && d < 90;
+      const panic = d < 16 || this.suppressT > 0 && d < 90 || this.retreat;
       if (panic && !s.roof) {
         s.anim = 'panic';
         const sp = 7 * dt;
@@ -336,6 +337,7 @@ export class Military {
   }
 
   _soldierFire(s, dt, d) {
+    if (this.retreat || this.ceaseFire) return;
     s.fireCd -= dt;
     if (s.burst > 0) {
       s.burstCd -= dt;
@@ -401,7 +403,7 @@ export class Military {
         // hit the monster?
         const dx = s.p.x - g.pos.x, dz = s.p.z - g.pos.z;
         if (g.alive && dx * dx + dz * dz < (GORILLA.radius + 1.2) ** 2 && s.p.y > g.pos.y && s.p.y < g.pos.y + 15) {
-          g.damage(s.dmg, s.type);
+          g.damage(s.dmg, s.type, s.p.clone());
           if (s.type === 'bullet') {
             ctx.fx.sparks(s.p, _v.copy(s.v).normalize().negate(), 3, [1, 0.8, 0.5]);
             ctx.events.emit('bulletHit', { x: s.p.x, y: s.p.y, z: s.p.z });
@@ -440,7 +442,7 @@ export class Military {
     // splash on the monster
     const g = ctx.gorilla;
     const d = Math.hypot(p.x - g.pos.x, p.z - g.pos.z);
-    if (building && d < 9 && p.y < g.pos.y + 16) g.damage(1 * power, 'splash');
+    if (building && d < 9 && p.y < g.pos.y + 16) g.damage(1 * power, 'splash', p.clone());
   }
 
   // ---------------- tanks ----------------
@@ -473,6 +475,7 @@ export class Military {
       let target = 0;
       if (d > 75 || (d > 30 && across > 70)) target = 9;
       if (d < 26) target = -6; // back off
+      if (this.retreat) target = -8;
       const dirSign = Math.sign(gAlong - along) || 1;
       // turn onto a crossing road when the monster is far off this one
       if (across > 60 && Math.abs(gAlong - along) < 12) {
@@ -505,7 +508,7 @@ export class Military {
       t.flash = Math.max(0, t.flash - dt * 4);
       t.barrelPivot.position.z = 1.4 - t.flash * 0.6;
       t.fireCd -= dt;
-      if (t.fireCd <= 0 && d < 140 && g.alive && elev < 0.62 && Math.abs(angleDiff(t.turretYaw, aimYaw)) < 0.12) {
+      if (t.fireCd <= 0 && d < 140 && g.alive && !this.retreat && !this.ceaseFire && elev < 0.62 && Math.abs(angleDiff(t.turretYaw, aimYaw)) < 0.12) {
         t.fireCd = 5 + Math.random() * 3;
         t.flash = 1;
         const muzzle = new THREE.Vector3(0, 0, 5.4).applyEuler(new THREE.Euler(t.barrelPivot.rotation.x, 0, 0)).add(new THREE.Vector3(0, 0.5, 1.4));
@@ -611,14 +614,17 @@ export class Military {
         const dn = ox * c.nx + oz * c.nz;
         if (dn < 0.25) { ox -= c.nx * (dn - 0.25) * 2; oz -= c.nz * (dn - 0.25) * 2; const l = Math.hypot(ox, oz); ox /= l; oz /= l; }
       }
-      const tx = g.pos.x + ox * radius;
-      const tz = g.pos.z + oz * radius;
+      let tx = g.pos.x + ox * radius;
+      let tz = g.pos.z + oz * radius;
+      if (this.retreat) { tx = g.pos.x + ox * 320; tz = g.pos.z + oz * 320; }
       // altitude: the monster's level (each chopper holds its own band), higher over open street
       const chestY = g.pos.y + 10;
       let ty;
       if (elevated) ty = chestY + (h.swoop > 0 ? 1 + h.band * 3 : -4 + h.band * 16);
       else ty = g.pos.y + (h.swoop > 0 ? 17 : 26 + h.band * 10);
       ty = Math.max(ty, 14);
+      if (this.retreat) ty = 140;
+      else if (this.ceaseFire) ty = g.pos.y + 30;
       let ax = (tx - h.x) * 1.2 - h.vx * 1.4;
       let ay = (ty - h.y) * 1.6 - h.vy * 1.8;
       let az = (tz - h.z) * 1.2 - h.vz * 1.4;
@@ -652,7 +658,7 @@ export class Military {
       h.light.visible = Math.floor(h.t * 2) % 2 === 0;
       // weapons
       const d = Math.hypot(g.pos.x - h.x, g.pos.z - h.z);
-      if (!g.alive) continue;
+      if (!g.alive || this.retreat || this.ceaseFire) continue;
       h.fireCd -= dt;
       h.rocketCd -= dt;
       const nose = new THREE.Vector3(h.x + fwdx * 3.5, h.y - 0.7, h.z + fwdz * 3.5);

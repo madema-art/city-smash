@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { patchCityLight } from '../render/CityLights.js';
 
 // Instanced articulated tiny humans (civilians and soldiers). Each body part is one
 // InstancedMesh, so hundreds of animated people cost a handful of draw calls.
@@ -22,7 +23,7 @@ export class HumanRenderer {
   constructor(root, capacity, { soldier = false } = {}) {
     this.cap = capacity;
     this.soldier = soldier;
-    const mat = new THREE.MeshStandardMaterial({ roughness: 0.8 });
+    const mat = patchCityLight(new THREE.MeshStandardMaterial({ roughness: 0.8 }), { strength: 1.3 });
     const make = (geo) => {
       const m = new THREE.InstancedMesh(geo, mat, capacity);
       m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);

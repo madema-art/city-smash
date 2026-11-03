@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
@@ -8,21 +7,64 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
 import { QUALITY } from '../config.js';
 
-// Lighting look. Everything that sets the "mood" of the daylight lives here so it can be tuned
-// in one place. Values are in linear, physically-based units (three r155+ light intensities).
+// Lighting look: cinematic night. Values are linear, physically-based (three r155+ units).
+// The moon gives silhouettes and long soft shadows; nearly everything else is lit by the city
+// itself (windows, street lamps, signs, headlights, emergency lights, fires) via CityLights.
 export const LOOK = {
-  exposure: 1.0,
-  toneMapping: THREE.AgXToneMapping,
-  sun: { color: 0xfff1dc, intensity: 3.4, elevation: 36, azimuth: 222 },
-  hemi: { sky: 0x9cbcf0, ground: 0x6a5642, intensity: 0.42 },
-  env: 0.5, // sky-environment contribution (diffuse + specular)
-  sky: { turbidity: 2.6, rayleigh: 1.55, mie: 0.0035, mieG: 0.82 },
-  skyScale: 0.55,
-  clouds: 0.45,
-  haze: 0x8eaac8,
-  fog: 0.00095,
-  saturation: 1.12,
-  contrast: 1.06,
+  exposure: 1.15,
+  toneMapping: THREE.ACESFilmicToneMapping,
+  moon: { color: 0x8fa8ff, intensity: 0.55, elevation: 34, azimuth: 132 },
+  hemi: { sky: 0x22325a, ground: 0x2a1c12, intensity: 0.22 },
+  env: 0.45,
+  haze: 0x0b1018,
+  fog: 0.0019,
+  saturation: 1.18,
+  contrast: 1.08,
+};
+
+// Night sky dome: deep blue zenith, sodium-orange light pollution on the horizon, stars, a moon
+// with a soft halo, and thin dark clouds lit from below by the city.
+const NightSkyShader = {
+  uniforms: { uMoon: { value: new THREE.Vector3() }, uTime: { value: 0 }, uGlow: { value: 1 } },
+  vertexShader: /* glsl */`
+    varying vec3 vDir;
+    void main(){ vDir = normalize(position); vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position = p.xyww; }`,
+  fragmentShader: /* glsl */`
+    uniform vec3 uMoon; uniform float uTime; uniform float uGlow;
+    varying vec3 vDir;
+    float h3(vec3 p){ p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+    float n3(vec3 x){ vec3 i = floor(x), f = fract(x); f = f*f*(3.0-2.0*f);
+      return mix(mix(mix(h3(i), h3(i+vec3(1,0,0)), f.x), mix(h3(i+vec3(0,1,0)), h3(i+vec3(1,1,0)), f.x), f.y),
+                 mix(mix(h3(i+vec3(0,0,1)), h3(i+vec3(1,0,1)), f.x), mix(h3(i+vec3(0,1,1)), h3(i+vec3(1,1,1)), f.x), f.y), f.z); }
+    void main(){
+      vec3 d = normalize(vDir);
+      float y = d.y;
+      vec3 zen = vec3(0.004, 0.008, 0.024);
+      vec3 mid = vec3(0.012, 0.022, 0.05);
+      vec3 hor = vec3(0.07, 0.06, 0.07);
+      vec3 col = mix(mid, zen, smoothstep(0.05, 0.7, y));
+      col = mix(hor, col, smoothstep(-0.02, 0.22, y));
+      // light pollution: warm sodium glow hugging the horizon
+      col += vec3(0.16, 0.085, 0.04) * exp(-max(y, 0.0) * 9.0) * uGlow;
+      // stars (fade near the glowing horizon)
+      vec3 sp = d * 420.0;
+      float st = step(0.9965, h3(floor(sp)));
+      float tw = 0.6 + 0.4 * sin(uTime * (2.0 + h3(floor(sp) + 3.1) * 4.0) + h3(floor(sp)) * 40.0);
+      col += vec3(0.8, 0.85, 1.0) * st * tw * smoothstep(0.08, 0.45, y) * 0.9;
+      // moon + halo
+      float md = dot(d, normalize(uMoon));
+      col += vec3(0.9, 0.95, 1.05) * smoothstep(0.99955, 0.99975, md) * 3.5;
+      col += vec3(0.12, 0.15, 0.25) * pow(max(md, 0.0), 180.0) * 1.2 + vec3(0.03, 0.04, 0.07) * pow(max(md, 0.0), 12.0);
+      // thin drifting clouds, dark blue with a warm underside from the city
+      vec3 cp = vec3(d.xz / max(0.08, y) * 0.6 + uTime * 0.004, 0.0);
+      float c = n3(cp * 1.3) * 0.6 + n3(cp * 3.1) * 0.3 + n3(cp * 7.0) * 0.1;
+      float cm = smoothstep(0.55, 0.8, c) * smoothstep(0.02, 0.25, y);
+      vec3 cc = mix(vec3(0.05, 0.035, 0.03), vec3(0.025, 0.03, 0.05), smoothstep(0.1, 0.6, y));
+      col = mix(col, cc + vec3(0.06, 0.07, 0.1) * pow(max(md, 0.0), 30.0), cm * 0.85);
+      gl_FragColor = vec4(col, 1.0);
+      #include <tonemapping_fragment>
+      #include <colorspace_fragment>
+    }`,
 };
 
 // GTAO that skips particles, tracers, glass shards and the sky dome (they have no meaningful
@@ -48,7 +90,7 @@ export class Renderer {
     r.setSize(window.innerWidth, window.innerHeight);
     r.outputColorSpace = THREE.SRGBColorSpace;
     const tm = params.get('tm');
-    r.toneMapping = tm === 'aces' ? THREE.ACESFilmicToneMapping : tm === 'neutral' ? THREE.NeutralToneMapping : LOOK.toneMapping;
+    r.toneMapping = tm === 'agx' ? THREE.AgXToneMapping : tm === 'neutral' ? THREE.NeutralToneMapping : LOOK.toneMapping;
     r.toneMappingExposure = parseFloat(params.get('exp') || LOOK.exposure);
     r.shadowMap.enabled = true;
     r.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -71,55 +113,44 @@ export class Renderer {
   }
 
   _setupSky() {
-    const sky = new Sky();
-    sky.scale.setScalar(2400);
+    const phi = THREE.MathUtils.degToRad(90 - LOOK.moon.elevation);
+    const theta = THREE.MathUtils.degToRad(LOOK.moon.azimuth);
+    this.sunDir = new THREE.Vector3().setFromSphericalCoords(1, phi, theta); // "sun" = the moon
+    const mat = new THREE.ShaderMaterial({ ...NightSkyShader, uniforms: THREE.UniformsUtils.clone(NightSkyShader.uniforms), side: THREE.BackSide, depthWrite: false, fog: false });
+    mat.uniforms.uMoon.value.copy(this.sunDir);
+    const sky = new THREE.Mesh(new THREE.SphereGeometry(2200, 48, 24), mat);
     sky.userData.noAO = true;
-    const u = sky.material.uniforms;
-    u.turbidity.value = LOOK.sky.turbidity;
-    u.rayleigh.value = LOOK.sky.rayleigh;
-    u.mieCoefficient.value = LOOK.sky.mie;
-    u.mieDirectionalG.value = LOOK.sky.mieG;
-    u.cloudCoverage.value = LOOK.clouds;
-    u.cloudDensity.value = 0.55;
-    // Afternoon sun: long, readable shadows down the avenues.
-    const phi = THREE.MathUtils.degToRad(90 - LOOK.sun.elevation);
-    const theta = THREE.MathUtils.degToRad(LOOK.sun.azimuth);
-    this.sunDir = new THREE.Vector3().setFromSphericalCoords(1, phi, theta);
-    u.sunPosition.value.copy(this.sunDir);
-    // The Sky shader is far brighter than the lit city; scale it into the same range so the
-    // horizon doesn't glow white and wash everything out through bloom.
-    sky.material.onBeforeCompile = (sh) => {
-      sh.fragmentShader = '#define SKY_K ' + LOOK.skyScale.toFixed(3) + '\n' + sh.fragmentShader;
-      sh.fragmentShader = sh.fragmentShader.replace('gl_FragColor = vec4( texColor, 1.0 );', 'gl_FragColor = vec4( texColor * SKY_K, 1.0 );');
-    };
+    sky.frustumCulled = false;
+    sky.renderOrder = -10;
     this.sky = sky;
     this.scene.add(sky);
 
-    // Pre-filtered environment for glass reflections and ambient specular.
+    // Night environment for reflections: dark sky, horizon glow, and a ring of lit skyline so
+    // glass towers reflect windows and signs rather than a blank sky.
     const pmrem = new THREE.PMREMGenerator(this.renderer);
     const envScene = new THREE.Scene();
-    const skyClone = new Sky();
-    skyClone.scale.setScalar(1000);
-    for (const k of ['turbidity', 'rayleigh', 'mieCoefficient', 'mieDirectionalG']) skyClone.material.uniforms[k].value = u[k].value;
-    skyClone.material.uniforms.sunPosition.value.copy(this.sunDir);
-    skyClone.material.onBeforeCompile = sky.material.onBeforeCompile;
-    envScene.add(skyClone);
-    // Reflections see a city-coloured lower hemisphere instead of more sky.
-    const ground = new THREE.Mesh(
-      new THREE.SphereGeometry(900, 24, 12, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2),
-      new THREE.MeshBasicMaterial({ color: 0x2a2c30, side: THREE.BackSide }),
-    );
+    const envSky = new THREE.Mesh(new THREE.SphereGeometry(900, 32, 16), new THREE.ShaderMaterial({ ...NightSkyShader, uniforms: THREE.UniformsUtils.clone(NightSkyShader.uniforms), side: THREE.BackSide }));
+    envSky.material.uniforms.uMoon.value.copy(this.sunDir);
+    envScene.add(envSky);
+    const ground = new THREE.Mesh(new THREE.CircleGeometry(900, 24).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x0c0b0b }));
     ground.position.y = -2;
     envScene.add(ground);
-    // a few dark "buildings" on the horizon so glass reflects a skyline, not a blank sky
-    const boxMat = new THREE.MeshBasicMaterial({ color: 0x3b4350 });
-    for (let i = 0; i < 36; i++) {
-      const a = (i / 36) * Math.PI * 2;
-      const h = 40 + ((i * 37) % 9) * 22;
-      const m = new THREE.Mesh(new THREE.BoxGeometry(70, h * 2, 70), boxMat);
-      m.position.set(Math.cos(a) * 520, 0, Math.sin(a) * 520);
+    const wall = new THREE.MeshBasicMaterial({ color: 0x07090d });
+    const lit = [0xffc27a, 0xcfe3ff, 0xffe0b0, 0xff9a5a];
+    for (let i = 0; i < 48; i++) {
+      const a = (i / 48) * Math.PI * 2;
+      const h = 60 + ((i * 37) % 11) * 26;
+      const m = new THREE.Mesh(new THREE.BoxGeometry(60, h * 2, 60), wall);
+      m.position.set(Math.cos(a) * 480, 0, Math.sin(a) * 480);
       m.lookAt(0, 0, 0);
       envScene.add(m);
+      // a few lit window bands
+      for (let k = 0; k < 6; k++) {
+        const w = new THREE.Mesh(new THREE.PlaneGeometry(40, 3), new THREE.MeshBasicMaterial({ color: new THREE.Color(lit[(i + k) % 4]).multiplyScalar(0.8 + ((i * k) % 5) * 0.3) }));
+        w.position.set(Math.cos(a) * 449, 8 + ((i * 13 + k * 29) % Math.max(10, h - 10)), Math.sin(a) * 449);
+        w.lookAt(0, w.position.y, 0);
+        envScene.add(w);
+      }
     }
     this.envMap = pmrem.fromScene(envScene, 0.02).texture;
     this.scene.environment = this.envMap;
@@ -132,7 +163,7 @@ export class Renderer {
     this.scene.add(hemi);
     this.hemi = hemi;
 
-    const sun = new THREE.DirectionalLight(LOOK.sun.color, LOOK.sun.intensity);
+    const sun = new THREE.DirectionalLight(LOOK.moon.color, LOOK.moon.intensity);
     sun.castShadow = true;
     sun.shadow.mapSize.set(QUALITY.shadowMapSize, QUALITY.shadowMapSize);
     const s = 140;
@@ -168,7 +199,7 @@ export class Renderer {
     }
     if (QUALITY.bloom) {
       // Only genuinely hot pixels bloom: fire, explosions, tracers, sun glints.
-      this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x / 2, size.y / 2), 0.38, 0.45, 2.4);
+      this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x / 2, size.y / 2), 0.42, 0.38, 1.05);
       this.composer.addPass(this.bloom);
     }
     this.composer.addPass(new OutputPass());
@@ -226,7 +257,7 @@ export class Renderer {
 
   render(dt) {
     this.gradePass.uniforms.uTime.value += dt;
-    this.sky.material.uniforms.time.value += dt;
+    this.sky.material.uniforms.uTime.value += dt;
     this.composer.render(dt);
   }
 }

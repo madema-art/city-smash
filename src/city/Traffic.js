@@ -3,6 +3,7 @@ import { part, merge, box, cyl } from '../core/geom.js';
 import { ROAD_CENTERS, CITY_HALF } from '../world/City.js';
 import { Held } from '../core/Held.js';
 import { pick } from '../core/util.js';
+import { patchCityLight } from '../render/CityLights.js';
 
 const _m = new THREE.Matrix4();
 const _q = new THREE.Quaternion();
@@ -61,7 +62,7 @@ export class Traffic {
   constructor(ctx) {
     this.ctx = ctx;
     const geos = carGeometries();
-    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.35, metalness: 0.35 });
+    const mat = patchCityLight(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.35, metalness: 0.45 }));
     this.mat = mat;
     this.geos = geos;
     this.meshes = {};

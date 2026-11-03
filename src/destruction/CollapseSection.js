@@ -72,6 +72,12 @@ export class CollapseSection {
       info[k * 3 + 2] = building.info[i * 3 + 2];
     }
     geo.setAttribute('aInfo', new THREE.InstancedBufferAttribute(info, 3));
+    // the section's lights flicker as it gives way, then die as it falls
+    this.pow = new Float32Array(n);
+    for (let k = 0; k < n; k++) this.pow[k] = Math.min(0.6, building.power[members[k]]);
+    this.powAttr = new THREE.InstancedBufferAttribute(this.pow, 1);
+    geo.setAttribute('aPow', this.powAttr);
+    this.lightsOut = false;
     this.geo = geo;
     this.mesh.geometry = geo;
     this.centers = new Float32Array(n * 3);
@@ -106,6 +112,15 @@ export class CollapseSection {
     const b = this.b;
     this.t += dt;
     const g = 30;
+    if (!this.lightsOut && this.t > this.sag * 0.6) {
+      this.lightsOut = true;
+      this.pow.fill(0);
+      this.powAttr.needsUpdate = true;
+      const c = new THREE.Vector3(b.cx, this.baseY + 2, b.cz);
+      this.ctx.fx.sparks(c.clone().add(new THREE.Vector3(b.width * 0.5, 0, 0)), new THREE.Vector3(1, 0, 0), 14);
+      this.ctx.fx.sparks(c.clone().add(new THREE.Vector3(-b.width * 0.5, 0, 0)), new THREE.Vector3(-1, 0, 0), 14);
+      this.ctx.events.emit('powerFail', { x: b.cx, y: this.baseY, z: b.cz, big: true });
+    }
     if (this.t < this.sag) {
       // sag: a slow, ominous give before the fall
       const k = this.t / this.sag;

@@ -78,6 +78,14 @@ export class Gorilla {
     this.reattachCd = 0;
     this.trans = null;
     this.leapTarget = null;
+    // diegetic condition
+    this.woundVis = 0; // displayed damage (eases toward real health)
+    this.healPulse = 0;
+    this.twitch = 0;
+    this.twitchDir = 1;
+    this.breathT = 0;
+    this.hits = [];
+    this.hitSamples = m.mesh.geometry.userData.hitSamples || [];
     this._apply();
   }
 
@@ -97,6 +105,7 @@ export class Gorilla {
     this.invuln -= dt;
     this.reattachCd -= dt;
 
+    this._updateCondition(dt);
     if (this.state === 'dead') {
       this.deathT += dt;
       this.vel.set(0, 0, 0);
@@ -952,12 +961,15 @@ export class Gorilla {
     h.release(this.handR.clone(), this.forward.clone().multiplyScalar(4).add(new THREE.Vector3(0, 2, 0)));
   }
 
-  damage(amount, from) {
+  damage(amount, from, pos = null) {
     if (this.state === 'dead' || this.invuln > 0) return;
     this.health -= amount;
+    this.twitch = Math.min(1, this.twitch + 0.35 + amount * 0.1);
+    this.twitchDir = Math.random() < 0.5 ? -1 : 1;
+    if (pos) this._addHitSplat(pos, amount);
     this.hurtFlash = Math.min(1, this.hurtFlash + amount / 10);
     this.ctx.events.emit('hurt', { amount, from });
-    if (amount >= 4 && (!this.action || this.action.name === 'hit')) this._start('hit');
+    if ((amount >= 4 || (amount >= 2 && this.woundVis > 0.6)) && (!this.action || this.action.name === 'hit')) this._start('hit');
     if (this.health <= 0) {
       this.health = 0;
       this.state = 'dead';
@@ -967,7 +979,92 @@ export class Gorilla {
     }
   }
 
-  heal(v) { this.health = Math.min(GORILLA.maxHealth, this.health + v); }
+  heal(v) {
+    this.health = Math.min(GORILLA.maxHealth, this.health + v);
+    this.healPulse = 1;
+    // fresh wounds close up first
+    for (const h of this.hits) h.w *= 0.45;
+  }
+
+  // Leave a localized wound where the shot landed: pick the rest-pose surface sample whose normal
+  // best faces the attacker (in the gorilla's own frame), favouring visible areas.
+  _addHitSplat(worldPos, amount) {
+    if (!this.hitSamples.length) return;
+    const dx = worldPos.x - this.pos.x, dz = worldPos.z - this.pos.z;
+    const c = Math.cos(-this.yaw), sn = Math.sin(-this.yaw);
+    const lx = dx * c + dz * sn, lz = -dx * sn + dz * c;
+    const ly = (worldPos.y - this.pos.y) / GORILLA.modelScale;
+    const len = Math.hypot(lx, lz) || 1;
+    let best = null, bs = -1e9;
+    for (let k = 0; k < 24; k++) {
+      const smp = this.hitSamples[Math.floor(Math.random() * this.hitSamples.length)];
+      const facing = (smp[3] * lx + smp[5] * lz) / len;
+      const score = facing * 1.5 - Math.abs(smp[1] - Math.min(1.6, Math.max(0.6, ly))) + smp[6] * 0.8;
+      if (score > bs) { bs = score; best = smp; }
+    }
+    const w = Math.min(1, 0.35 + amount * 0.12);
+    if (this.hits.length >= 10) this.hits.sort((a, b) => a.w - b.w).shift();
+    this.hits.push({ x: best[0], y: best[1], z: best[2], w });
+  }
+
+  // Push condition into the material and keep the body language in sync with health.
+  _updateCondition(dt) {
+    const sev = 1 - this.health / GORILLA.maxHealth;
+    // damage shows immediately; recovery from feeding is gradual and visible
+    this.woundVis = sev > this.woundVis ? damp(this.woundVis, sev, 6, dt) : damp(this.woundVis, sev, 0.9, dt);
+    this.healPulse = Math.max(0, this.healPulse - dt * 0.6);
+    this.twitch = Math.max(0, this.twitch - dt * 4);
+    for (let i = this.hits.length - 1; i >= 0; i--) {
+      const h = this.hits[i];
+      h.w -= dt * (0.004 + this.healPulse * 0.35 + (sev < 0.15 ? 0.05 : 0));
+      if (h.w <= 0) this.hits.splice(i, 1);
+    }
+    const u = this.model.material.userData.u;
+    if (u) {
+      u.uWound.value = this.state === 'dead' ? Math.max(this.woundVis, 0.95) : this.woundVis;
+      u.uHeal.value = this.healPulse;
+      u.uRage.value = this.rage > 0 ? 1 : 0;
+      for (let i = 0; i < 10; i++) {
+        const h = this.hits[i];
+        if (h) u.uHits.value[i].set(h.x, h.y, h.z, h.w); else u.uHits.value[i].set(0, -10, 0, 0);
+      }
+    }
+    // breathing rhythm: slow and deep when healthy, quick and ragged when hurt
+    const rate = 0.42 + this.woundVis * 0.75 + (this.speed > 12 ? 0.25 : 0);
+    const prev = this.breathT;
+    this.breathT += dt * rate;
+    if (Math.floor(this.breathT) !== Math.floor(prev) && this.state !== 'dead') {
+      this.ctx.events.emit('breath', { p: this.chest, sev: this.woundVis, exert: this.speed > 12 || !!this.action });
+    }
+  }
+
+  // Additive body language: breathing, hunched/swaying posture when hurt, pain twitches.
+  _conditionPose(out) {
+    const sev = this.woundVis;
+    const ph = this.breathT * Math.PI * 2;
+    const br = Math.sin(ph) * (0.025 + 0.06 * sev);
+    out.add('chest', br, 0, 0);
+    out.add('spine', br * 0.4, 0, 0);
+    out.add('clavL', 0, 0, br * 0.6);
+    out.add('clavR', 0, 0, -br * 0.6);
+    out.add('jaw', Math.max(0, Math.sin(ph)) * 0.12 * sev, 0, 0);
+    if (this.state === 'ground' || this.state === 'air') {
+      // proud when healthy, hunched and head-down when beaten
+      out.add('hips', sev * 0.16 - (1 - sev) * 0.03, 0, 0);
+      out.add('neck', sev * 0.22 - (1 - sev) * 0.06, 0, 0);
+      if (sev > 0.65) {
+        const sway = Math.sin(this.t * 1.1) * 0.05 * (sev - 0.5);
+        out.add('hips', 0, sway, sway);
+        out.add('head', 0, 0, sway * 1.5);
+      }
+    }
+    if (this.twitch > 0) {
+      const k = this.twitch;
+      out.add('chest', -0.12 * k, 0.1 * k * this.twitchDir, 0.06 * k * this.twitchDir);
+      out.add('neck', 0.12 * k, 0, 0);
+    }
+  }
+
 
   // ---------------- animation ----------------
   _animate(dt) {
@@ -1073,6 +1170,7 @@ export class Gorilla {
       this.out.add('neck', 0, this.headYaw * 0.4, 0);
       this.out.add('head', -this.aimPitch * 0.3, this.headYaw * 0.4, 0);
       if (this.hurtFlash > 0) this.out.add('jaw', this.hurtFlash * 0.3, 0, 0);
+      this._conditionPose(this.out);
     }
     applyPose(this.model.bones, this.out, this.model.rest);
     this._apply();
