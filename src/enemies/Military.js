@@ -601,17 +601,25 @@ export class Military {
       h.orbitA += (h.dir * dt * (h.swoop > 0 ? 18 : 12)) / radius;
       const tx = g.pos.x + Math.cos(h.orbitA) * radius;
       const tz = g.pos.z + Math.sin(h.orbitA) * radius;
-      // keep above nearby rooftops
-      let floor = 0;
-      for (const b of ctx.city.buildingsNear(h.x, h.z, 18)) floor = Math.max(floor, b.columnTopAt(Math.min(Math.max(h.x, b.x0), b.x0 + b.width - 0.1), Math.min(Math.max(h.z, b.z0), b.z0 + b.depth - 0.1)));
-      for (const b of ctx.city.buildingsNear(tx, tz, 18)) floor = Math.max(floor, b.height * (b.destroyedFraction > 0.5 ? 0.4 : 1));
-      const ty = Math.max(g.pos.y + (h.swoop > 0 ? 17 : 28), floor + 12);
+      // keep above the rooftops directly beneath (now) and along the path (target)
+      const roofUnder = (x, z, r) => {
+        let f = 0;
+        for (const b of ctx.city.buildingsNear(x, z, r)) {
+          const cx = Math.min(Math.max(x, b.x0), b.x0 + b.width - 0.1), cz = Math.min(Math.max(z, b.z0), b.z0 + b.depth - 0.1);
+          f = Math.max(f, b.columnTopAt(cx, cz));
+        }
+        return f;
+      };
+      const floorNow = roofUnder(h.x, h.z, 7);
+      const floor = Math.max(floorNow, roofUnder(tx, tz, 7));
+      const ty = Math.max(g.pos.y + (h.swoop > 0 ? 17 : 28), floor + 10);
       const ax = (tx - h.x) * 1.2 - h.vx * 1.4;
       const ay = (ty - h.y) * 1.6 - h.vy * 1.8;
       const az = (tz - h.z) * 1.2 - h.vz * 1.4;
       h.vx += clamp(ax, -22, 22) * dt; h.vy += clamp(ay, -16, 16) * dt; h.vz += clamp(az, -22, 22) * dt;
+      // about to clip a roof: climb hard rather than teleport
+      if (h.y < floorNow + 5) h.vy = Math.max(h.vy, 14);
       h.x += h.vx * dt; h.y += h.vy * dt; h.z += h.vz * dt;
-      if (h.y < floor + 4) h.y = floor + 4;
       // face the monster, bank with lateral acceleration
       const faceYaw = Math.atan2(g.pos.x - h.x, g.pos.z - h.z);
       h.yaw = dampAngle(h.yaw, faceYaw, 2.5, dt);

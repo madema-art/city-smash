@@ -35,7 +35,7 @@ Open the printed URL (default http://localhost:5173) in a desktop Chrome, Edge o
 | Pause | Start | Esc |
 | Restart | Back / Select | R |
 
-Controllers get rumble on hits, collapses and damage. The camera drifts in behind you while running if you are not using the right stick. When you hold something, RT throws it toward the centre of the screen.
+Controllers get rumble on hits, collapses and damage. The camera drifts in behind you while running if you are not using the right stick. With a controller, **aim assist** steers punches and throws toward the nearest helicopter, tank or soldier in front of the camera: jump (A) and punch (RT) to swat a low chopper. When you hold something, RT throws it at the assisted target, or toward the centre of the screen.
 
 ## Goal
 
@@ -69,4 +69,5 @@ To add another monster, implement the same `update / damage / held` surface as `
 
 * `?low=1` uses smaller shadows and turns off bloom and MSAA (useful on weak GPUs).
 * `?view=gorilla&poses=idle,walk:0.25,punch:0.45` opens a pose viewer for the gorilla rig.
-* `node tools/padtest.mjs <outDir>` drives the game through a virtual gamepad in headless Chromium (needs the dev server running) and prints state after each step.
+* `?test=1` runs a deterministic mode: there is no animation loop, and time advances only through `window.__game.tick(frames)` / `renderOnce()`.
+* `node tools/padtest.mjs <outDir>` drives the game in test mode through a virtual gamepad in headless Chromium (needs the dev server running). It moves, sprints, turns the camera, punches, smashes, stomps, collapses a tower, eats, throws a car, swats a helicopter and pauses/restarts, printing game state after each step.
