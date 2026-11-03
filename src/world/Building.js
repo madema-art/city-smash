@@ -256,6 +256,11 @@ export class Building {
     this._refreshCell(i);
     this._refreshNeighbors(i);
     this.structDirty = true;
+    if (this.power[i] > 0.4 && y > 0 && Math.random() < 0.05 && this.ctx.fires) {
+      const c = this.cellCenterWorld(i, new THREE.Vector3());
+      const en = this.exteriorNormalOf(i, new THREE.Vector3());
+      if (en) { c.addScaledVector(en, 1.5); c.y -= 1.5; this.ctx.fires.start(c.x, c.y, c.z, 30 + Math.random() * 40, 0.8); }
+    }
     this.power[i] = 0;
     for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
       const X = x + dx, Z = z + dz;

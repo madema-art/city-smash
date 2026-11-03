@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { part, merge, box, cyl } from '../core/geom.js';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { ROAD_CENTERS, CITY_HALF } from '../world/City.js';
 import { Held } from '../core/Held.js';
 import { pick } from '../core/util.js';
@@ -52,10 +53,59 @@ function carGeometries() {
     ...wheels(11, 2.5, 0.5),
     part(cyl(0.5, 0.5, 0.3, 10), TIRE, { x: 1.18, y: 0.5, z: 0, rz: Math.PI / 2 }),
   ]);
+  G.police = merge([
+    part(box(1.92, 0.62, 4.6), 0x101215, { y: 0.66 }),
+    part(box(1.94, 0.4, 2.0), BODY, { y: 0.72, z: -0.1 }),
+    part(box(1.68, 0.55, 2.3), GLASS, { y: 1.22, z: -0.15 }),
+    part(box(1.62, 0.08, 2.1), BODY, { y: 1.52, z: -0.15 }),
+    part(box(1.3, 0.16, 0.36), 0x222428, { y: 1.62, z: -0.05 }),
+    part(box(1.95, 0.14, 0.14), CHROME, { y: 0.45, z: 2.3 }),
+    part(box(1.6, 0.35, 0.2), 0x15171a, { y: 0.5, z: 2.38 }),
+    ...wheels(4.6, 1.92),
+  ]);
   return G;
 }
 
-const DIMS = { sedan: [0.95, 0.8, 2.25], van: [1.0, 1.15, 2.5], bus: [1.25, 1.55, 5.5] };
+// Emissive light quads (HDR vertex colours so they bloom): headlights front, taillights back.
+function lightGeometry(len, w, y, police = false) {
+  const parts = [];
+  const head = new THREE.Color(5, 4.6, 3.6), tail = new THREE.Color(2.6, 0.12, 0.08);
+  const quad = (x, z, c, ry, sw = 0.42) => {
+    const g = new THREE.PlaneGeometry(sw, 0.16);
+    g.rotateY(ry);
+    g.translate(x, y, z);
+    const n = g.attributes.position.count;
+    const col = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) { col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    g.deleteAttribute('uv'); g.deleteAttribute('normal');
+    parts.push(g);
+  };
+  for (const sx of [-1, 1]) {
+    quad(sx * (w / 2 - 0.3), len / 2 + 0.03, head, 0);
+    quad(sx * (w / 2 - 0.3), -len / 2 - 0.03, tail, Math.PI);
+  }
+  return mergeGeometries(parts);
+}
+
+// Light bar: left half red, right half blue; brightness is driven per instance (flash pattern).
+function lightBarGeometry() {
+  const parts = [];
+  for (const [x, c] of [[-0.33, new THREE.Color(1, 0.05, 0.03)], [0.33, new THREE.Color(0.05, 0.2, 1)]]) {
+    const g = new THREE.BoxGeometry(0.6, 0.15, 0.32);
+    g.translate(x, 1.71, -0.05);
+    const n = g.attributes.position.count;
+    const col = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) { col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    g.deleteAttribute('uv');
+    parts.push(g);
+  }
+  return mergeGeometries(parts);
+}
+
+const DIMS = { sedan: [0.95, 0.8, 2.25], van: [1.0, 1.15, 2.5], bus: [1.25, 1.55, 5.5], police: [0.96, 0.85, 2.3] };
+const LIGHT_Y = { sedan: 0.78, van: 0.82, bus: 0.95, police: 0.78 };
 const COLORS = [0xc0392b, 0x2471a3, 0xe8e8e8, 0x1c1c1c, 0x7f8c8d, 0xf4d03f, 0x1e8449, 0xa04000, 0x5b2c6f, 0xd5d8dc, 0x922b21];
 
 export class Traffic {
@@ -68,15 +118,31 @@ export class Traffic {
     this.meshes = {};
     this.dyn = {};
     for (const k of Object.keys(geos)) {
-      const cap = k === 'bus' ? 30 : 260;
+      const cap = k === 'bus' ? 30 : k === 'police' ? 40 : 260;
       const m = new THREE.InstancedMesh(geos[k], mat, cap);
       m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       m.castShadow = true; m.receiveShadow = true; m.frustumCulled = false;
       m.setColorAt(0, _c.set(1, 1, 1));
       m.count = 0;
       ctx.root.add(m);
-      this.meshes[k] = { mesh: m, slots: [], cap };
+      // head/tail lights share the body's instance matrices
+      const [, , hz] = DIMS[k];
+      const lm = new THREE.InstancedMesh(lightGeometry(hz * 2, (DIMS[k][0] * 2), LIGHT_Y[k]), new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }), cap);
+      lm.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      lm.frustumCulled = false;
+      lm.count = 0;
+      lm.userData.noAO = true;
+      ctx.root.add(lm);
+      this.meshes[k] = { mesh: m, lights: lm, slots: [], cap };
     }
+    // police light bars (flash colours set per instance each frame)
+    this.bar = new THREE.InstancedMesh(lightBarGeometry(), new THREE.MeshBasicMaterial({ vertexColors: true }), 40);
+    this.bar.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.bar.frustumCulled = false;
+    this.bar.count = 0;
+    this.bar.setColorAt(0, _c.set(1, 1, 1));
+    this.bar.userData.noAO = true;
+    ctx.root.add(this.bar);
     this.cars = [];
     this.bodies = []; // dynamic cars {car, body}
     this.time = 0;
@@ -90,6 +156,7 @@ export class Traffic {
     const car = { type, slot, x: 0, y: 0, z: 0, yaw: 0, tilt: 0, roll: 0, color: new THREE.Color(color), speed: 0, state: 'drive', squash: 1, burn: 0 };
     M.slots[slot] = car;
     M.mesh.count = Math.max(M.mesh.count, slot + 1);
+    M.lights.count = M.mesh.count;
     this.cars.push(car);
     return car;
   }
@@ -98,6 +165,7 @@ export class Traffic {
     const M = this.meshes[car.type];
     M.slots[car.slot] = null;
     M.mesh.setMatrixAt(car.slot, ZERO);
+    M.lights.setMatrixAt(car.slot, ZERO);
     const i = this.cars.indexOf(car);
     if (i >= 0) this.cars.splice(i, 1);
   }
@@ -206,6 +274,7 @@ export class Traffic {
         d.car.burn -= dt;
         if (Math.random() < 0.35) this.ctx.fx.smoke(t.x, t.y + 1.5, t.z, 2.5, 0.12, 4, 3);
         if (Math.random() < 0.5) this.ctx.fx.fire(t.x, t.y + 1, t.z, 1.6);
+        this.ctx.lights.pulse(t.x, t.z, 0.8, 0.34, 0.08, 10);
       }
       if ((d.age > 6 && d.body.isSleeping()) || d.age > 20) {
         // freeze as a static wreck
@@ -216,9 +285,13 @@ export class Traffic {
       }
     }
     // write instances
+    const cam = this.ctx.camPos || { x: 0, z: 0 };
+    let bars = 0;
+    this.flash = (this.flash || 0) + dt;
     for (const car of this.cars) {
       const M = this.meshes[car.type].mesh;
-      if (car.state === 'held') { M.setMatrixAt(car.slot, ZERO); continue; }
+      const LM = this.meshes[car.type].lights;
+      if (car.state === 'held') { M.setMatrixAt(car.slot, ZERO); LM.setMatrixAt(car.slot, ZERO); continue; }
       if (car.state === 'dynamic' || car.state === 'wreck') {
         const q = car.state === 'dynamic' ? this.bodies.find((b) => b.car === car)?.q : car.q;
         const h = DIMS[car.type][1];
@@ -232,9 +305,34 @@ export class Traffic {
       M.setMatrixAt(car.slot, _m);
       const k = car.burn > 0 || car.burnt ? 0.18 : 1;
       M.setColorAt(car.slot, _c.copy(car.color).multiplyScalar(k));
+      // lights: running cars and police; wrecks and parked cars are dark
+      const lit = (car.state === 'drive' || car.state === 'flee' || car.state === 'police' || car.state === 'abandoned') && !car.burnt;
+      LM.setMatrixAt(car.slot, lit ? _m : ZERO);
+      const near = (car.x - cam.x) ** 2 + (car.z - cam.z) ** 2 < 230 * 230;
+      if (lit && near && car.state !== 'abandoned') {
+        const fx = Math.sin(car.yaw), fz = Math.cos(car.yaw);
+        this.ctx.lights.pulse(car.x + fx * 9, car.z + fz * 9, 0.42, 0.4, 0.34, 9);
+      }
+      if (car.type === 'police' && car.state !== 'held') {
+        const live = car.state === 'police' || car.state === 'abandoned';
+        if (live) {
+          // alternating red / blue strobes; each car has its own phase
+          const ph = (this.flash * 2.6 + car.slot * 0.37) % 1;
+          const red = ph < 0.5 ? (Math.sin(ph * Math.PI * 8) > 0 ? 5 : 0.4) : 0.3;
+          const blue = ph >= 0.5 ? (Math.sin(ph * Math.PI * 8) > 0 ? 5 : 0.4) : 0.3;
+          this.bar.setMatrixAt(bars, _m);
+          this.bar.setColorAt(bars, _c.setRGB(red, 1, blue));
+          bars++;
+          if (near) this.ctx.lights.pulse(car.x, car.z, red > 1 ? 0.9 : 0.05, 0.03, blue > 1 ? 1.0 : 0.05, 16);
+        }
+      }
     }
+    this.bar.count = bars;
+    this.bar.instanceMatrix.needsUpdate = true;
+    if (this.bar.instanceColor) this.bar.instanceColor.needsUpdate = true;
     for (const k in this.meshes) {
       this.meshes[k].mesh.instanceMatrix.needsUpdate = true;
+      this.meshes[k].lights.instanceMatrix.needsUpdate = true;
       if (this.meshes[k].mesh.instanceColor) this.meshes[k].mesh.instanceColor.needsUpdate = true;
     }
   }

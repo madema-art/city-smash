@@ -625,12 +625,13 @@ export class Gorilla {
 
     // ---- holding on: react to the wall being destroyed under the hands ----
     const grip = this._grip(c, nu, this.pos.y);
-    if (grip === 0) { this._leaveClimb('lost'); return; }
+    if (grip === 0) { if (!this._regrip(c)) this._leaveClimb('lost'); return; }
     if (grip < 3) {
       c.slip += dt;
       const g2 = city.groundAt(this.pos.x, this.pos.z, this.pos.y + 1);
       this.pos.y = Math.max(g2, this.pos.y - 5 * dt);
       if (c.slip > 0.05 && c.slip - dt <= 0.05) this.ctx.events.emit('slip', { p: this.pos.clone() });
+      if (c.slip > 0.5 && this._regrip(c)) return;
       if (c.slip > 1.6) { this._leaveClimb('lost'); return; }
     } else c.slip = Math.max(0, c.slip - dt * 2);
 
@@ -642,6 +643,22 @@ export class Gorilla {
     const step = Math.floor(c.phase * 2);
     if (step !== c.lastStep) { c.lastStep = step; if (mv > 1) this.ctx.events.emit('climbStep', { p: this.chest }); }
     this.speed = 0;
+  }
+
+  // The hold under the hands was smashed away: lunge to the nearest solid hold (below or to the
+  // side first, like a real climber), or fall if there is nothing within reach.
+  _regrip(c) {
+    const u = this._u(), y = this.pos.y;
+    for (const [du, dy] of [[0, -4], [-4, 0], [4, 0], [-4, -4], [4, -4], [0, -8], [-8, 0], [8, 0], [0, 4], [-8, -6], [8, -6], [0, -12]]) {
+      if (y + dy < 0) continue;
+      if (this._grip(c, u + du, y + dy) >= 4 && this._bodyFree(c, u + du, y + dy)) {
+        this._beginTrans('attach', this._rootFor(c, u + du, y + dy), this._faceYaw(c), 0.28, c);
+        c.slip = 0;
+        this.ctx.events.emit('regrip', { p: this.chest });
+        return true;
+      }
+    }
+    return false;
   }
 
   _startMantle(c, u, top) {

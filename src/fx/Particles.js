@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { cityLightUniforms, CITY_LIGHT_GLSL } from '../render/CityLights.js';
 
 // CPU-simulated, GPU-instanced billboard particles. One draw call per blend mode.
 // Used for dust, smoke, fire, sparks and flashes.
@@ -83,12 +84,17 @@ export class ParticleSystem {
         map: { value: puffTex },
         fogColor: { value: new THREE.Color() },
         fogDensity: { value: 0 },
+        uAmb: { value: 0.2 },
+        ...cityLightUniforms,
       },
       vertexShader: /* glsl */`
         attribute vec3 iPos; attribute vec4 iCol; attribute vec2 iSR;
         varying vec2 vUv; varying vec4 vCol; varying float vFogDepth;
+        uniform float uAmb;
+        ${CITY_LIGHT_GLSL}
         void main(){
           vUv = uv; vCol = iCol;
+          ${additive ? '' : 'vCol.rgb *= uAmb + cityLightAt(iPos) * 1.4; // dust/smoke lit by moon + nearby city light'}
           vec4 mv = modelViewMatrix * vec4(iPos, 1.0);
           float c = cos(iSR.y), s = sin(iSR.y);
           vec2 p = vec2(c*position.x - s*position.y, s*position.x + c*position.y) * iSR.x;

@@ -363,17 +363,18 @@ export function gorillaMaterial() {
         float fiber = 0.5 + 0.75 * strands * (0.55 + 0.45 * clump) + 0.25 * (fine - 0.5);
         // ---- wounds / blood / dust (health driven) ----
         float field = fn(vRest * 13.0) * 0.55 + fn(vRest * 31.0) * 0.3 + fn(vRest * 77.0) * 0.15;
-        float sev = uWound * (0.55 + 0.75 * vWB);
-        float m = smoothstep(1.02 - sev, 1.08 - sev, field + vWB * 0.18);
-        float core = smoothstep(1.1 - sev * 0.85, 1.16 - sev * 0.85, field + vWB * 0.18);
+        // threshold falls with damage, fastest where wounds show first (shoulders, back, arms)
+        float thr = 0.97 - uWound * 0.52 * (0.35 + 0.65 * vWB);
+        float m = smoothstep(thr, thr + 0.05, field);
+        float core = smoothstep(thr + 0.1, thr + 0.14, field);
         // localized hit splats
         float splat = 0.0;
         for (int i = 0; i < 10; i++) {
           float d = distance(vRest, uHits[i].xyz) + (fn(vRest * 90.0) - 0.5) * 0.03;
-          splat = max(splat, uHits[i].w * (1.0 - smoothstep(0.035, 0.085, d)));
+          splat = max(splat, uHits[i].w * (1.0 - smoothstep(0.025, 0.065, d)));
         }
         m = max(m, splat);
-        core = max(core, splat * smoothstep(0.5, 0.9, splat) * step(0.03, 0.085 - distance(vRest, vRest)));
+        core = max(core, smoothstep(0.55, 0.95, splat));
         // claw-rake cuts across shoulders and arms
         float cut = (1.0 - smoothstep(0.0, 0.025, abs(fn(vec3(vRest.x * 9.0 + vRest.y * 30.0, vRest.z * 9.0, 2.0)) - 0.5)))
                     * smoothstep(0.35, 0.8, uWound) * vWB * step(0.55, fn(vRest * 6.0));
@@ -383,17 +384,17 @@ export function gorillaMaterial() {
         // dust and grime from the fight (all over, more as he weakens)
         float dust = smoothstep(0.35, 0.9, fn(vRest * 8.0 + 4.0)) * (0.15 + 0.6 * uWound);
         fur = mix(fur, vec3(0.085, 0.075, 0.065), dust * 0.55 * vFur);
-        vec3 matted = vec3(0.07, 0.012, 0.01) * (0.7 + 0.6 * fiber);
-        vec3 wound = mix(vec3(0.16, 0.01, 0.008), vec3(0.28, 0.035, 0.03), fn(vRest * 140.0));
-        fur = mix(fur, matted, m * 0.9);
+        vec3 matted = vec3(0.045, 0.011, 0.008) * (0.7 + 0.6 * fiber);
+        vec3 wound = mix(vec3(0.09, 0.008, 0.006), vec3(0.16, 0.02, 0.016), fn(vRest * 140.0));
+        fur = mix(fur, matted, m * 0.85);
         fur = mix(fur, wound, gWoundCore);
         // wrinkled leathery skin on face, chest, hands and feet
         float wr = fn(vRest * vec3(120.0, 380.0, 120.0));
         diffuseColor.rgb = mix(fur * (0.85 + 0.25 * wr), fur, vFur);`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
         roughnessFactor = mix(0.42 + 0.2 * wr, 0.78 + 0.15 * strands, vFur);
-        roughnessFactor = mix(roughnessFactor, 0.42, gMat * 0.7);
-        roughnessFactor = mix(roughnessFactor, 0.22, gWoundCore);`)
+        roughnessFactor = mix(roughnessFactor, 0.5, gMat * 0.6);
+        roughnessFactor = mix(roughnessFactor, 0.34, gWoundCore);`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
         {
           // strand noise: furry, non-plastic response (flattened where fur is matted with blood)
@@ -402,7 +403,7 @@ export function gorillaMaterial() {
         }`)
       .replace('#include <lights_fragment_maps>', `#include <lights_fragment_maps>
         // fur scatters the sky softly; skin and wet blood keep a sheen
-        radiance *= mix(mix(0.7, 0.16, vFur), 1.4, max(gWoundCore, gMat * 0.5));
+        radiance *= mix(mix(0.7, 0.16, vFur), 0.75, max(gWoundCore, gMat * 0.4));
         iblIrradiance *= 0.85;`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
         {
@@ -416,7 +417,7 @@ export function gorillaMaterial() {
           totalEmissiveRadiance += vec3(0.32, 0.2, 0.09) * uHeal * (0.35 + rim) * vFur * (0.6 + 0.4 * fn(vRest * 20.0 + uHeal * 3.0));
         }`);
   };
-  mat.customProgramCacheKey = () => 'gorilla-skin-v3';
+  mat.customProgramCacheKey = () => 'gorilla-skin-v4';
   return patchCityLight(mat, { strength: 1.4, key: 'gorilla' });
 }
 

@@ -247,6 +247,7 @@ export class CollapseSection {
       this.ctx.fx.glassBurst(_p.set(wx, Math.max(wy, 1.5), wz), out, 8, 4);
     }
     if (wy < 12) this.ctx.events.emit('crush', { x: wx, y: wy, z: wz });
+    if (wy < 8 && Math.random() < 0.012 && this.ctx.fires) this.ctx.fires.start(wx, this.ctx.rubble.heightAt(wx, wz) + 0.5, wz, 45 + Math.random() * 40, 1.1);
   }
 
   dispose() {

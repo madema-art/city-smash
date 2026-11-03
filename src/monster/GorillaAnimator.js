@@ -523,17 +523,28 @@ export const Poses = {
     return p;
   },
 
+  // Stagger, knees buckle, one arm reaches out, then he crashes forward onto his chest.
   death(p, t) {
-    const k = ease(clamp01(t / 1.4));
-    stance(p.clear(), 0.6 * (1 - k), 0.3);
-    p.add('hips', -1.45 * k, 0, 0.15 * k);
-    p.add('neck', 0.5 * k, 0, 0);
-    p.add('jaw', 0.4 * k, 0, 0);
-    p.sym('upperArm', -0.3 * k - 0.7, 0, 0.9 * k);
-    p.sym('thigh', -0.4 - 0.6 * k, 0, 0.3 * k);
-    p.sym('shin', 0.4 + 0.3 * k, 0, 0);
-    p.hips[1] = -0.05 - 0.5 * k;
-    p.hips[2] = -0.35 * k;
+    const stag = ease(seg(t, 0, 0.7));
+    const fall = ease(seg(t, 0.55, 1.45));
+    const settle = ease(seg(t, 1.45, 2.4));
+    stance(p.clear(), 0.62, 0.25 + 0.45 * stag);
+    // stagger: sway, head lolls
+    p.add('hips', -0.25 * stag * (1 - fall), 0.2 * stag, 0.18 * stag * (1 - fall));
+    p.add('neck', 0.35 * stag, 0.3 * stag, 0);
+    p.add('jaw', 0.45 * stag, 0, 0);
+    // collapse forward
+    p.add('hips', 0.95 * fall, 0, 0.12 * fall);
+    p.add('spine', 0.2 * fall, 0, 0);
+    p.add('neck', -0.6 * fall + 0.2 * settle, -0.5 * fall, 0.2 * fall);
+    p.side('upperArm', 'L', -1.8 * fall - 0.6 * (1 - fall) * stag, 0, 0.7 * fall + 0.2);
+    p.side('forearm', 'L', -0.2 * fall, 0, 0);
+    p.side('upperArm', 'R', -0.4 - 0.9 * fall, 0, 1.1 * fall);
+    p.side('forearm', 'R', -0.9 * fall, 0, 0);
+    p.sym('thigh', -1.3 * fall - 0.4, 0, 0.25 * fall);
+    p.sym('shin', 1.5 * fall + 0.4, 0, 0);
+    p.hips[1] = -0.05 - 0.12 * stag - 0.48 * fall - 0.04 * settle;
+    p.hips[2] = 0.25 * fall;
     return p;
   },
 };

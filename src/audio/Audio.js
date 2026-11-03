@@ -610,4 +610,222 @@ export class Audio {
       o.start(t); o.stop(t + 0.65);
     }
   }
+
+  // ---------------- diegetic state sounds ----------------
+  // Breathing: calm and deep when healthy; fast, ragged and wet as wounds pile up.
+  breath(pos, sev = 0, exert = false) {
+    if (!this.ctx || !this._ok('breath', 0.5)) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    const vol = 0.06 + sev * 0.35 + (exert ? 0.08 : 0);
+    const out = this._out(pos, vol, 0.25, 22);
+    const dur = 0.9 - sev * 0.45;
+    // exhale: breathy noise through a low formant
+    const f = this._burst(out, t, 'bandpass', 380 - sev * 120, 2.2, dur, 0.9, this.white, 0.12);
+    f.frequency.setValueAtTime(420, t);
+    f.frequency.linearRampToValueAtTime(260, t + dur);
+    // a rasp/rattle when badly hurt
+    if (sev > 0.45) {
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth';
+      o.frequency.value = 38 + Math.random() * 8;
+      const g = ctx.createGain();
+      this._env(g, t + 0.05, 0.08, 0.25 * sev, dur);
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 500;
+      o.connect(lp).connect(g).connect(out);
+      o.start(t); o.stop(t + dur + 0.2);
+    }
+  }
+
+  // Deep satisfied rumble after a meal.
+  content(pos) {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime + 1.2;
+    const out = this._out(pos, 0.7, 0.4, 30);
+    const o = ctx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(62, t);
+    o.frequency.linearRampToValueAtTime(48, t + 1.1);
+    const lfo = ctx.createOscillator(); lfo.frequency.value = 18;
+    const lg = ctx.createGain(); lg.gain.value = 0.4;
+    const trem = ctx.createGain(); trem.gain.value = 0.6;
+    lfo.connect(lg).connect(trem.gain);
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 320;
+    const g = ctx.createGain();
+    this._env(g, t, 0.15, 0.7, 1.1);
+    o.connect(lp).connect(trem).connect(g).connect(out);
+    o.start(t); o.stop(t + 1.4); lfo.start(t); lfo.stop(t + 1.4);
+  }
+
+  // Electrical failure: zap, crackle and a falling mains hum.
+  power(pos, big = false) {
+    if (!this.ctx || !this._ok('power', big ? 0.2 : 0.35)) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    const out = this._out(pos, big ? 0.7 : 0.4, 0.6, 30);
+    for (let i = 0; i < (big ? 8 : 4); i++) this._burst(out, t + Math.random() * 0.4, 'highpass', 2500 + Math.random() * 3000, 0.8, 0.02 + Math.random() * 0.05, 0.6);
+    const o = ctx.createOscillator();
+    o.type = 'square';
+    o.frequency.setValueAtTime(120, t);
+    o.frequency.exponentialRampToValueAtTime(40, t + (big ? 1.4 : 0.7));
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900;
+    const g = ctx.createGain();
+    this._env(g, t, 0.01, big ? 0.35 : 0.2, big ? 1.4 : 0.7);
+    o.connect(lp).connect(g).connect(out);
+    o.start(t); o.stop(t + 1.6);
+  }
+
+  // Street lamp destroyed: bulb pop, glass, buzz.
+  lamp(pos) {
+    if (!this.ctx || !this._ok('lamp', 0.08)) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    const out = this._out(pos, 0.45, 0.5, 20);
+    this._burst(out, t, 'bandpass', 1800, 1.5, 0.05, 1.0);
+    this.glass(pos, 1);
+    const o = ctx.createOscillator();
+    o.type = 'sawtooth'; o.frequency.value = 100;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    for (let i = 0; i < 6; i++) { g.gain.setValueAtTime(Math.random() < 0.5 ? 0.12 : 0.0001, t + 0.05 + i * 0.07); }
+    g.gain.setValueAtTime(0.0001, t + 0.5);
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 700;
+    o.connect(lp).connect(g).connect(out);
+    o.start(t); o.stop(t + 0.55);
+  }
+
+  // Police/military radio: a squelch, a burst of band-limited "speech", a squelch.
+  radio(pos) {
+    if (!this.ctx || !this._ok('radio', 1.5)) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    const out = this._out(pos, 0.3, 0.3, 18);
+    const beep = (tt, f) => {
+      const o = ctx.createOscillator(); o.type = 'square'; o.frequency.value = f;
+      const g = ctx.createGain(); this._env(g, tt, 0.005, 0.15, 0.06);
+      o.connect(g).connect(out); o.start(tt); o.stop(tt + 0.1);
+    };
+    beep(t, 1250);
+    const dur = 0.8 + Math.random() * 1.2;
+    const n = this._noiseSrc(this.white);
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1300; bp.Q.value = 1.4;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t + 0.1);
+    // syllable-like amplitude bursts
+    for (let k = 0.1; k < dur; k += 0.09 + Math.random() * 0.08) g.gain.setValueAtTime(Math.random() < 0.7 ? 0.5 * Math.random() + 0.2 : 0.02, t + k);
+    g.gain.setValueAtTime(0.0001, t + dur + 0.1);
+    n.connect(bp).connect(g).connect(out);
+    n.start(t); n.stop(t + dur + 0.2);
+    beep(t + dur + 0.15, 900);
+  }
+
+  // Spatial siren loop for a police unit (two-tone wail).
+  sirenLoop(id, pos, moving = true) {
+    if (!this.ctx) return;
+    let L = this.loops.get(id);
+    if (!L) {
+      const ctx = this.ctx;
+      const panner = ctx.createPanner();
+      panner.panningModel = 'equalpower'; panner.distanceModel = 'inverse'; panner.refDistance = 25; panner.rolloffFactor = 1.1;
+      const g = ctx.createGain(); g.gain.value = 0;
+      panner.connect(g).connect(this.master);
+      const vs = ctx.createGain(); vs.gain.value = 0.25;
+      g.connect(vs).connect(this.verb);
+      const o = ctx.createOscillator(); o.type = 'triangle'; o.frequency.value = 760;
+      const lfo = ctx.createOscillator(); lfo.frequency.value = 0.28 + Math.random() * 0.1;
+      const lg = ctx.createGain(); lg.gain.value = 230;
+      lfo.connect(lg).connect(o.frequency);
+      const o2 = ctx.createOscillator(); o2.type = 'sawtooth'; o2.frequency.value = 760 * 1.5;
+      lg.connect(o2.frequency);
+      const g2 = ctx.createGain(); g2.gain.value = 0.15;
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2200;
+      o.connect(lp); o2.connect(g2).connect(lp); lp.connect(panner);
+      o.start(); o2.start(); lfo.start();
+      L = { panner, g, nodes: [o, o2, lfo] };
+      this.loops.set(id, L);
+    }
+    const p = L.panner;
+    if (p.positionX) { p.positionX.value = pos.x; p.positionY.value = pos.y; p.positionZ.value = pos.z; } else p.setPosition(pos.x, pos.y, pos.z);
+    L.g.gain.setTargetAtTime(moving ? 0.22 : 0.09, this.ctx.currentTime, 0.4);
+    L.seen = true;
+  }
+
+  // Tank diesel: low throbbing rumble.
+  engineLoop(id, pos) {
+    if (!this.ctx) return;
+    let L = this.loops.get(id);
+    if (!L) {
+      const ctx = this.ctx;
+      const panner = ctx.createPanner();
+      panner.panningModel = 'equalpower'; panner.distanceModel = 'inverse'; panner.refDistance = 20; panner.rolloffFactor = 1.3;
+      const g = ctx.createGain(); g.gain.value = 0;
+      g.gain.linearRampToValueAtTime(0.4, ctx.currentTime + 1.5);
+      panner.connect(g).connect(this.master);
+      const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = 34;
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 180;
+      const n = this._noiseSrc(this.brown, 0.6);
+      const ng = ctx.createGain(); ng.gain.value = 0.5;
+      const chop = ctx.createGain(); chop.gain.value = 0.6;
+      const lfo = ctx.createOscillator(); lfo.frequency.value = 9;
+      const lg = ctx.createGain(); lg.gain.value = 0.35;
+      lfo.connect(lg).connect(chop.gain);
+      o.connect(lp); n.connect(ng).connect(lp); lp.connect(chop).connect(panner);
+      o.start(); n.start(); lfo.start();
+      L = { panner, g, nodes: [o, n, lfo] };
+      this.loops.set(id, L);
+    }
+    const p = L.panner;
+    if (p.positionX) { p.positionX.value = pos.x; p.positionY.value = pos.y; p.positionZ.value = pos.z; } else p.setPosition(pos.x, pos.y, pos.z);
+    L.seen = true;
+  }
+
+  // Wind between towers grows with altitude; city traffic hum fades as the city dies.
+  setAmbience(height, life) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    if (!this.wind) {
+      const ctx = this.ctx;
+      const n = this._noiseSrc(this.white, 0.4);
+      const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 500; bp.Q.value = 0.6;
+      const g = ctx.createGain(); g.gain.value = 0;
+      const gust = ctx.createOscillator(); gust.frequency.value = 0.13;
+      const gg = ctx.createGain(); gg.gain.value = 180;
+      gust.connect(gg).connect(bp.frequency);
+      n.connect(bp).connect(g).connect(this.master);
+      n.start(); gust.start();
+      this.wind = g;
+    }
+    this.wind.gain.setTargetAtTime(0.012 + Math.min(1, Math.max(0, height - 15) / 70) * 0.09, t, 0.8);
+    if (this.ambGain) this.ambGain.gain.setTargetAtTime(0.012 + 0.04 * life, t, 2);
+  }
+
+  // Victory: the grid dies with a long descending drone under the roar.
+  powerDown() {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    const out = this._out(null, 0.5, 0.8);
+    for (const f of [110, 165, 55]) {
+      const o = ctx.createOscillator(); o.type = 'sawtooth';
+      o.frequency.setValueAtTime(f, t);
+      o.frequency.exponentialRampToValueAtTime(f * 0.25, t + 5);
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 600;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.18, t + 0.6);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 5.5);
+      o.connect(lp).connect(g).connect(out);
+      o.start(t); o.stop(t + 5.6);
+    }
+  }
+
+  // Defeat: the monster's body hits the street.
+  bodyFall(pos) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime + 1.1;
+    const out = this._out(pos, 1.4, 0.9, 50);
+    this._thump(out, t, 60, 20, 1.6, 1.4);
+    this._burst(out, t, 'lowpass', 700, 0.6, 1.2, 1.0, this.brown, 0.005);
+  }
 }

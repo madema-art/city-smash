@@ -122,15 +122,16 @@ export class CameraRig {
         const h = city.raycast(pivot, backOf(lift), camWant, 1);
         if (h < 0 || h > 14) { liftWant = lift; camWant = h < 0 ? camWant : h - 2; found = true; break; }
       }
-      if (!found) { liftWant = 0.5; hit = city.raycast(pivot, backOf(0.5), camWant, 1); camWant = hit > 0 ? Math.max(3.5, hit - 1.5) : camWant; }
+      if (!found) { liftWant = climbing ? 0.5 : 0.8; hit = city.raycast(pivot, backOf(liftWant), camWant, 1); camWant = hit > 0 ? Math.max(climbing ? 3.5 : 9, hit - 1.5) : camWant; }
     }
     this.lift = damp(this.lift || 0, liftWant, 4, dt);
     const back = backOf(this.lift);
     // re-check along the smoothed direction so the camera can't clip while easing
     const hit2 = city.raycast(pivot, back, Math.max(camWant, this.curDist), 1);
-    if (hit2 > 0) camWant = Math.min(camWant, Math.max(3.5, hit2 - 1.5));
+    const minD = climbing ? 3.5 : 9;
+    if (hit2 > 0) camWant = Math.min(camWant, Math.max(minD, hit2 - 1.5));
     this.curDist = camWant < this.curDist ? damp(this.curDist, camWant, 18, dt) : damp(this.curDist, camWant, 2.5, dt);
-    if (hit2 > 0 && this.curDist > hit2 - 1) this.curDist = Math.max(3, hit2 - 1);
+    if (hit2 > 0 && this.curDist > hit2 - 1) this.curDist = Math.max(minD - 0.5, hit2 - 1);
     const pos = pivot.clone().addScaledVector(back, this.curDist);
     // look at the pivot along the actual (possibly lifted) direction
     dir.copy(back).negate();

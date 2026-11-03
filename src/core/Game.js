@@ -17,6 +17,9 @@ import { Crowd } from '../city/Crowd.js';
 import { Traffic } from '../city/Traffic.js';
 import { Military } from '../enemies/Military.js';
 import { WindowPeople } from '../city/WindowPeople.js';
+import { Police } from '../enemies/Police.js';
+import { Searchlights } from '../enemies/Searchlights.js';
+import { Fires } from '../fx/Fires.js';
 import { Audio } from '../audio/Audio.js';
 import { HUD } from '../ui/HUD.js';
 import { CityLights } from '../render/CityLights.js';
@@ -143,6 +146,7 @@ export class Game {
     };
     ctx.lights = new CityLights();
     ctx.fx = new FX(root, this.renderer.envMap);
+    ctx.fires = new Fires(ctx);
     ctx.rubble = new RubbleField(root);
     ctx.fx.setFloor((x, z) => ctx.rubble.heightAt(x, z) * 0.8);
     ctx.debris = new DebrisSystem(root, physics, ctx.rubble, events);
@@ -157,6 +161,8 @@ export class Game {
     ctx.windows = new WindowPeople(ctx);
     ctx.traffic = new Traffic(ctx);
     ctx.military = new Military(ctx);
+    ctx.police = new Police(ctx);
+    ctx.searchlights = new Searchlights(ctx);
     this.level = { ctx, root, time: 0, endT: 0, introDone: false, score: 0, grabCheck: 0, grabHint: '', toppled: new Set() };
     this._wireEvents(ctx);
     window.__ctx = ctx;
@@ -211,6 +217,7 @@ export class Game {
     E.on('climbStep', () => R(0.08, 0.05, 50));
     E.on('lostGrip', () => { R(0.6, 0.8, 350); hud.callout('LOST GRIP!', 'warn small'); });
     E.on('slip', () => R(0.25, 0.6, 300));
+    E.on('regrip', (e) => { R(0.4, 0.5, 160); A.grunt(e.p); A.concrete(e.p, 0.6); });
     E.on('mantle', () => R(0.35, 0.2, 180));
     const L = () => this.level;
     const camDist = (x, y, z) => this.renderer.camera.position.distanceTo(_v.set(x, y, z));
@@ -225,7 +232,13 @@ export class Game {
     E.on('swing', (e) => A.whoosh({ x: e.p.x, y: e.p.y + 10, z: e.p.z }, e.heavy));
     E.on('throw', (e) => A.whoosh(e.p, true));
     E.on('grab', () => A.grunt(ctx.gorilla.chest));
-    E.on('eat', (e) => { A.munch(e.p); hud.callout(`+${e.heal} HP`, 'good small'); });
+    E.on('eat', (e) => { A.munch(e.p); A.content(e.p); hud.callout(`+${e.heal} HP`, 'good small'); });
+    E.on('breath', (e) => A.breath(e.p, e.sev, e.exert));
+    E.on('powerFail', (e) => A.power(e, e.big));
+    E.on('lampBreak', (e) => { A.lamp(e); R(0.15, 0.4, 70); });
+    E.on('policeArrive', () => {});
+    E.on('victory', () => { A.powerDown(); R(0.9, 0.6, 1200); });
+    E.on('gorillaDeath', (e) => { A.bodyFall(e.p); R(1, 0.8, 900); });
     E.on('roar', (e) => { A.roar({ x: e.p.x, y: e.p.y + 12, z: e.p.z }); hud.callout('RAGE!', 'warn'); });
     E.on('roarIntro', () => {});
     E.on('step', (e) => {
@@ -350,6 +363,7 @@ export class Game {
     for (let i = 0; i < frames; i++) {
       this.input.beginFrame(dt);
       this._padSystem();
+      this._restartHold(dt);
       let d = dt;
       if (this.hitStopT > 0) { this.hitStopT -= dt; d = dt * 0.08; }
       if (this.state === 'playing' || this.state === 'won' || this.state === 'lost') this._update(d, dt);
@@ -390,7 +404,11 @@ export class Game {
     g.update(dt, input, ctx.cameraRig);
     if (g.heldFollow) g.heldFollow.follow(g);
     const camPos = this.renderer.camera.position;
+    const destroyedPctForAudio = ctx.city.destroyedPercent;
+    ctx.camPos = camPos;
     ctx.military.update(dt, camPos);
+    ctx.police.update(dt);
+    ctx.searchlights.update(dt);
     ctx.crowd.update(dt, camPos);
     ctx.windows.update(dt, camPos);
     ctx.traffic.update(dt);
@@ -401,6 +419,7 @@ export class Game {
     ctx.props.update(dt);
     ctx.rubble.update();
     ctx.fx.update(dt, this.renderer.scene.fog);
+    ctx.fires.update(dt, camPos);
     ctx.lights.update(dt);
     sharedBuildingUniforms.uTime.value += dt;
     // building fade around the line of sight
@@ -411,13 +430,23 @@ export class Game {
     const look = ctx.cameraRig.lookDir;
     this.renderer.updateShadowFocus(_v.set(g.pos.x + look.x * 45, 0, g.pos.z + look.z * 45));
     this.renderer.gradePass.uniforms.uDamage.value = g.hurtFlash;
-    // audio listener + helicopter loops
+    // audio listener + spatial loops (nearest few of each kind)
     this.audio.setListener(this.renderer.camera);
     for (const h of ctx.military.helis) if (h.state === 'fly' || h.state === 'falling') this.audio.heliLoop(h, h);
+    const near = (list, n) => list.sort((a, b) => ((a.x - camPos.x) ** 2 + (a.z - camPos.z) ** 2) - ((b.x - camPos.x) ** 2 + (b.z - camPos.z) ** 2)).slice(0, n);
+    for (const sd of near(ctx.police.sirens(), 4)) this.audio.sirenLoop(sd.id, sd, sd.moving);
+    for (const t of near(ctx.military.tanks.filter((t) => t.hp > 0 && !t.held), 2)) this.audio.engineLoop(t, { x: t.x, y: 2, z: t.z });
+    lvl.radioT = (lvl.radioT || 3) - dt;
+    if (lvl.radioT <= 0 && ctx.military.level > 0 && !ctx.military.retreat) {
+      lvl.radioT = 7 - Math.min(5, ctx.military.level) + Math.random() * 4;
+      const src = [...ctx.police.sirens(), ...ctx.military.soldiers.filter((x) => x.state === 'aim').slice(0, 3)];
+      if (src.length) { const r = src[Math.floor(Math.random() * src.length)]; this.audio.radio({ x: r.x, y: 2, z: r.z }); }
+    }
+    this.audio.setAmbience(g.pos.y, Math.max(0, 1 - destroyedPctForAudio / 60));
     this.audio.sweepLoops();
-    // score + HUD
+    // score + HUD (HUD is debug-only)
     const s = ctx.stats;
-    const destroyed = ctx.city.destroyedPercent;
+    const destroyed = destroyedPctForAudio;
     lvl.score = s.destroyedCells * 5 + s.soldiers * 50 + s.tanks * 500 + s.helis * 750 + s.civilians * 10 + s.eaten * 100 + s.vehicles * 60 + s.collapsed * 1000;
     lvl.grabCheck -= dt;
     if (lvl.grabCheck <= 0) {

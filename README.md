@@ -1,6 +1,8 @@
 # City Smash
 
-An arcade monster-destruction game in the browser. You are a 15-metre silverback gorilla loose in a living city: punch holes in skyscrapers, bring them down floor by floor, eat fleeing pedestrians to heal, and swat the helicopters, tanks and soldiers sent to stop you.
+An arcade monster-destruction game in the browser, set at night. You are a 15-metre silverback gorilla loose in a living city: punch holes in skyscrapers, bring them down floor by floor, eat people out of their windows to heal, and swat the helicopters, tanks and soldiers sent to stop you.
+
+**There is no HUD.** Once play begins the screen shows only the world. You read your health from the gorilla's wounds, breathing and posture. You read the military's escalation from sirens, police roadblocks, searchlights and aircraft. You read your progress from the skyline going dark and falling down.
 
 Built with **Three.js**, **Vite** and **Rapier** physics. Every asset is procedural: the gorilla is sculpted from signed-distance primitives at load time, buildings are shaded procedurally, and all sound is synthesised with WebAudio. There are no downloaded models, textures or audio files.
 
@@ -33,7 +35,7 @@ Open the printed URL (default http://localhost:5173) in a desktop Chrome, Edge o
 | Climb / let go | Y / △ | C |
 | Chest-beat roar (rage: +50% damage) | RB | Q |
 | Pause | Start | Esc |
-| Restart | Back / Select | R |
+| Restart | Hold Back / Select (about 1 s) | Hold R |
 
 Controllers get rumble on hits, collapses and damage. The camera drifts in behind you while running if you are not using the right stick. With a controller, **aim assist** steers punches and throws toward the nearest helicopter, tank or soldier in front of the camera: jump (A) and punch (RT) to swat a low chopper. When you hold something, RT throws it at the assisted target, or toward the centre of the screen.
 
@@ -55,11 +57,30 @@ Climbing is a full mode. Press **Y / C** next to any wall (or in mid-air, or at 
 
 You can stop and hang at any height. You haul yourself onto roofs and setback ledges when your hands run out of wall. Steering into a wall in mid-air grabs it again. If the wall you're holding is smashed or collapses, you slip, regrip or fall. People come to the windows near you, waving for help. Punch their window and they tumble out; reach in and they're a snack. Helicopters fly at your altitude in front of the facade and make close passes you can swat. Tanks can't elevate their guns high enough to reach you near the top of a tower.
 
+## Reading the game without a HUD
+
+| What | How the world shows it |
+| --- | --- |
+| Health | Wounds open on the shoulders, back, arms and flanks. Fur mats with blood and dust, and fresh hits leave marks where they land. Breathing gets faster and ragged, posture hunches, and at critical health the gorilla sways. |
+| Healing | After eating, a warm sheen runs over the fur, fresh wounds close, breathing calms, and he gives a satisfied rumble. |
+| Military response | Early on there are distant sirens and a couple of police cars. As it grows there are police roadblocks strobing red and blue at intersections, radio chatter, helicopter searchlights hunting you, then tanks. At the top, searchlight batteries sweep the sky and lock on to you. |
+| City destruction | Windows break and go dark, floors brown out and flicker, streetlights die and leave pools of darkness, fires smoulder, rubble piles up and towers fall. The ruined city is dark except for emergency lights. |
+| A building about to fall | Groans, dust leaking from joints, debris shedding, and lights flickering on the failing floors. |
+| Victory (60% destroyed) | Power fails across the city in a rolling wave, a last landmark collapses, the military pulls out, and the gorilla roars over the ruins. |
+| Defeat | He staggers and crashes face-first, the guns fall silent, searchlights hold on the body, and the picture settles toward darkness. |
+
+After an ending plays out, press **A / Start / Enter** or click to go again.
+
 ## Goal
 
 Destroy **60%** of the city before the military takes you down. Military response escalates with destruction and time: infantry first, then helicopters, then tanks, up to six levels. Eating civilians or soldiers restores health. Press restart at any time to start over instantly.
 
 ## Look
+
+The city is lit at night. A custom night sky has stars, a moon, dark clouds and a sodium glow on the horizon. Moonlight casts the shadows. Street-level light comes from a world-space **city light field** (`src/render/CityLights.js`). Street lamps, shop fronts and signs write into a static map, and headlights, police strobes, fires, explosions and searchlight spots write into a dynamic map. Ground, facades, vehicles, people, the gorilla and even the dust sample that field, so destroying a lamp really darkens its patch of street. Each building cell has an electrical state, so smashed rooms go dark, damaged floors flicker, and wrecked buildings black out floor by floor. Only a handful of real lights exist: the moon, three searchlight spots, and a few fire and explosion point lights.
+
+The previous daylight notes follow for reference.
+
 
 Daylight uses AgX tone mapping with a physically based sun, hemisphere light and sky environment. The sky shader is scaled into the same brightness range as the city, with drifting clouds. Half-resolution ground-truth ambient occlusion (GTAO) adds contact shadows. Bloom only fires on genuinely hot pixels (fire, explosions, tracers). A display-space grade adds saturation, contrast and a vignette. The facade shader controls sky reflection separately for glass and walls, so windows read as glass without flattening the walls. Tuning lives in `LOOK` in `src/render/Renderer.js`. Add `?ao=0` to the URL to turn the AO pass off.
 
@@ -89,9 +110,12 @@ To add another monster, implement the same `update / damage / held` surface as `
 
 ## Dev tools
 
-* `?low=1` uses smaller shadows and turns off bloom and MSAA (useful on weak GPUs).
+* `?low=1` uses smaller shadows and turns off bloom, AO and MSAA (useful on weak GPUs).
+* `?debug=1` shows the developer HUD (health, destruction %, threat level). It is off in normal play.
 * `?view=gorilla&poses=idle,walk:0.25,punch:0.45` opens a pose viewer for the gorilla rig.
 * `?test=1` runs a deterministic mode: there is no animation loop, and time advances only through `window.__game.tick(frames)` / `renderOnce()`.
 * `node tools/elevtest.mjs <outDir>` is the vertical play-test, driven by a virtual gamepad. It covers these steps: attach to a skyscraper, climb to the 10th floor, hold, traverse, punch a hole at that height (checking that only floors 9–11 break), grab and eat a person from a window, keep climbing, swat a helicopter, leap at another and punch it mid-air, re-grab the tower, climb onto the roof, and jump back down to the street. At every step it checks that the camera is not inside geometry, the gorilla is not occluded, and the camera is on the open side of the wall.
+* `node tools/cinematest.mjs <outDir>` runs the cinematic-overhaul suite. It checks that no UI or text is visible at every stage, that wounds track health and recede after eating, that escalation cues grow with the response level, that lamps and windows lose light when destroyed, that victory and defeat play out, and that hold-to-restart works. It also renders the 12-shot visual review.
+* `node tools/smoke.mjs` is a 30-second boot-and-play check.
 * `node tools/looktest.mjs <outDir>` renders fixed street, aerial, close-up and collapse viewpoints for lighting review.
 * `node tools/padtest.mjs <outDir>` drives the game in test mode through a virtual gamepad in headless Chromium (needs the dev server running). It moves, sprints, turns the camera, punches, smashes, stomps, collapses a tower, eats, throws a car, swats a helicopter and pauses/restarts, printing game state after each step.

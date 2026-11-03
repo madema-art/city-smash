@@ -25,56 +25,100 @@ const LEVELS = [
 ];
 
 function tankGeometry() {
-  const O = 0x5d6438, D = 0x2a2c22, M = 0x4b5130;
+  const O = 0x4e5532, D = 0x1e201a, M = 0x3f4529, T = 0x2b2d24, H = new THREE.Color(5, 4.6, 3.6);
   const hull = merge([
     part(box(3.4, 1.1, 7.0), O, { y: 1.35 }),
-    part(box(3.0, 0.5, 1.4), M, { y: 1.65, z: 3.3, rx: -0.5 }),
-    part(box(0.95, 1.15, 7.4), D, { x: 1.95, y: 0.6 }),
-    part(box(0.95, 1.15, 7.4), D, { x: -1.95, y: 0.6 }),
-    part(box(1.1, 0.12, 7.6), O, { x: 1.95, y: 1.22 }),
-    part(box(1.1, 0.12, 7.6), O, { x: -1.95, y: 1.22 }),
-    ...[-2.6, -1.3, 0, 1.3, 2.6].flatMap((z) => [
-      part(cyl(0.48, 0.48, 1.0, 10), 0x3a3c30, { x: 1.95, y: 0.55, z, rz: Math.PI / 2 }),
-      part(cyl(0.48, 0.48, 1.0, 10), 0x3a3c30, { x: -1.95, y: 0.55, z, rz: Math.PI / 2 }),
+    part(box(3.2, 0.55, 1.5), M, { y: 1.62, z: 3.35, rx: -0.55 }),
+    part(box(3.2, 0.45, 1.0), M, { y: 1.5, z: -3.45, rx: 0.4 }),
+    // tracks and running gear
+    part(box(0.95, 1.15, 7.4), T, { x: 1.95, y: 0.6 }),
+    part(box(0.95, 1.15, 7.4), T, { x: -1.95, y: 0.6 }),
+    ...[-2.8, -1.4, 0, 1.4, 2.8].flatMap((z) => [
+      part(cyl(0.48, 0.48, 1.0, 12), 0x33352b, { x: 1.95, y: 0.55, z, rz: Math.PI / 2 }),
+      part(cyl(0.48, 0.48, 1.0, 12), 0x33352b, { x: -1.95, y: 0.55, z, rz: Math.PI / 2 }),
     ]),
+    // armoured side skirts, fenders, stowage boxes
+    part(box(0.12, 0.75, 7.0), O, { x: 2.47, y: 1.0 }),
+    part(box(0.12, 0.75, 7.0), O, { x: -2.47, y: 1.0 }),
+    part(box(1.1, 0.1, 7.7), O, { x: 1.95, y: 1.42 }),
+    part(box(1.1, 0.1, 7.7), O, { x: -1.95, y: 1.42 }),
+    part(box(0.8, 0.45, 1.4), M, { x: 1.9, y: 1.7, z: -2.4 }),
+    part(box(0.8, 0.45, 1.4), M, { x: -1.9, y: 1.7, z: -2.4 }),
+    // engine grille and exhausts
+    part(box(2.4, 0.08, 1.8), D, { y: 1.92, z: -2.5 }),
+    part(cyl(0.16, 0.16, 0.5, 8), D, { x: 1.2, y: 1.6, z: -3.75, rx: Math.PI / 2 }),
+    part(cyl(0.16, 0.16, 0.5, 8), D, { x: -1.2, y: 1.6, z: -3.75, rx: Math.PI / 2 }),
+    // headlight housings + lamps (lit)
+    part(box(0.45, 0.3, 0.2), D, { x: 1.2, y: 1.85, z: 3.75 }),
+    part(box(0.45, 0.3, 0.2), D, { x: -1.2, y: 1.85, z: 3.75 }),
+    part(box(0.32, 0.18, 0.04), H, { x: 1.2, y: 1.85, z: 3.86 }),
+    part(box(0.32, 0.18, 0.04), H, { x: -1.2, y: 1.85, z: 3.86 }),
   ]);
   const turret = merge([
-    part(box(2.7, 0.95, 3.4), O, { y: 0.47 }),
-    part(box(2.2, 0.6, 1.0), M, { y: 0.35, z: 1.9, rx: 0.4 }),
-    part(cyl(0.45, 0.45, 0.5, 8), D, { x: 0.7, y: 1.1, z: -0.5 }),
-    part(box(0.12, 1.2, 0.12), D, { x: -0.9, y: 1.4, z: -1.2 }),
+    part(box(2.8, 0.95, 3.2), O, { y: 0.47 }),
+    part(box(2.4, 0.7, 1.1), M, { y: 0.4, z: 1.8, rx: 0.45 }),
+    part(box(2.5, 0.8, 1.3), O, { y: 0.45, z: -2.1 }),
+    // commander's cupola, sights, MG, antennas, smoke dischargers
+    part(cyl(0.48, 0.52, 0.45, 10), M, { x: 0.7, y: 1.15, z: -0.5 }),
+    part(box(0.12, 0.12, 1.1), D, { x: 0.7, y: 1.45, z: -0.1 }),
+    part(box(0.45, 0.4, 0.5), D, { x: -0.75, y: 1.15, z: 0.6 }),
+    part(box(0.05, 2.4, 0.05), D, { x: -1.0, y: 2.0, z: -2.4 }),
+    part(box(0.05, 1.8, 0.05), D, { x: 1.0, y: 1.7, z: -2.5 }),
+    ...[-0.25, 0, 0.25].flatMap((dz) => [
+      part(cyl(0.08, 0.08, 0.35, 6), D, { x: 1.4, y: 0.75, z: 0.9 + dz, rz: -0.9 }),
+      part(cyl(0.08, 0.08, 0.35, 6), D, { x: -1.4, y: 0.75, z: 0.9 + dz, rz: 0.9 }),
+    ]),
   ]);
   const barrel = merge([
-    part(cyl(0.17, 0.2, 5.0, 8), D, { z: 2.5, rx: Math.PI / 2 }),
-    part(cyl(0.26, 0.26, 0.7, 8), D, { z: 4.9, rx: Math.PI / 2 }),
+    part(cyl(0.17, 0.2, 5.0, 10), D, { z: 2.5, rx: Math.PI / 2 }),
+    part(cyl(0.27, 0.27, 0.9, 10), D, { z: 2.1, rx: Math.PI / 2 }),
+    part(cyl(0.25, 0.25, 0.55, 10), D, { z: 4.95, rx: Math.PI / 2 }),
+    part(box(0.6, 0.5, 0.6), M, { y: 0.0, z: 0.1 }),
   ]);
   return { hull, turret, barrel };
 }
 
 function heliGeometry() {
-  const B = 0x3f4a3c, D = 0x22261f, G = 0x16202a;
+  const B = 0x2c342d, L = 0x3d463c, D = 0x181b17, G = 0x0e151c, M = 0x4a4f48;
   const body = merge([
-    part(sphere(1, 12, 8), B, { sx: 1.25, sy: 1.15, sz: 3.4, y: 0 }),
-    part(sphere(1, 10, 6), G, { sx: 0.9, sy: 0.75, sz: 1.3, y: 0.45, z: 2.3 }),
-    part(cyl(0.38, 0.55, 6.5, 8), B, { z: -5.2, rx: Math.PI / 2, y: 0.25 }),
-    part(box(0.18, 2.0, 1.4), B, { y: 1.1, z: -8.2, rx: -0.3 }),
-    part(box(3.0, 0.12, 0.9), B, { y: 0.4, z: -7.8 }),
-    part(box(4.6, 0.18, 1.1), B, { y: -0.2, z: 0.2 }),
-    part(cyl(0.3, 0.3, 1.6, 8), D, { x: 2.1, y: -0.55, z: 0.3, rx: Math.PI / 2 }),
-    part(cyl(0.3, 0.3, 1.6, 8), D, { x: -2.1, y: -0.55, z: 0.3, rx: Math.PI / 2 }),
-    part(box(0.12, 0.12, 4.2), D, { x: 1.0, y: -1.45, z: 0.2 }),
-    part(box(0.12, 0.12, 4.2), D, { x: -1.0, y: -1.45, z: 0.2 }),
-    part(box(0.1, 0.6, 0.1), D, { x: 1.0, y: -1.15, z: 1.2 }),
-    part(box(0.1, 0.6, 0.1), D, { x: -1.0, y: -1.15, z: 1.2 }),
-    part(box(0.1, 0.6, 0.1), D, { x: 1.0, y: -1.15, z: -0.8 }),
-    part(box(0.1, 0.6, 0.1), D, { x: -1.0, y: -1.15, z: -0.8 }),
-    part(cyl(0.3, 0.4, 0.7, 8), D, { y: 1.35 }),
-    part(cyl(0.12, 0.08, 1.2, 6), D, { y: -0.6, z: 3.3, rx: Math.PI / 2 }),
+    // tapered fuselage: nose, cabin, engine deck
+    part(sphere(1, 14, 10), B, { sx: 1.0, sy: 1.05, sz: 2.6, y: 0, z: 0.2 }),
+    part(sphere(1, 12, 8), B, { sx: 0.72, sy: 0.8, sz: 1.6, y: -0.15, z: 2.5 }),
+    part(sphere(1, 10, 8), L, { sx: 0.95, sy: 0.4, sz: 2.4, y: -0.75, z: 0.3 }),
+    // tandem canopy
+    part(sphere(1, 12, 8), G, { sx: 0.62, sy: 0.55, sz: 0.95, y: 0.62, z: 2.1 }),
+    part(sphere(1, 12, 8), G, { sx: 0.62, sy: 0.6, sz: 0.9, y: 0.85, z: 0.9 }),
+    part(box(0.08, 0.5, 1.9), M, { y: 0.85, z: 1.5 }),
+    // engine nacelles + exhausts
+    part(cyl(0.48, 0.42, 2.6, 10), B, { x: 0.95, y: 0.75, z: -0.4, rx: Math.PI / 2 }),
+    part(cyl(0.48, 0.42, 2.6, 10), B, { x: -0.95, y: 0.75, z: -0.4, rx: Math.PI / 2 }),
+    part(cyl(0.3, 0.36, 0.6, 8), D, { x: 1.1, y: 0.8, z: -1.9, rx: Math.PI / 2 - 0.3 }),
+    part(cyl(0.3, 0.36, 0.6, 8), D, { x: -1.1, y: 0.8, z: -1.9, rx: Math.PI / 2 - 0.3 }),
+    part(cyl(0.3, 0.42, 0.9, 10), D, { y: 1.45, z: 0.1 }),
+    // tail boom, fin, stabilizer, tail wheel
+    part(cyl(0.3, 0.6, 6.8, 10), B, { z: -4.9, rx: Math.PI / 2, y: 0.35 }),
+    part(box(0.16, 2.1, 1.3), B, { y: 1.2, z: -8.2, rx: -0.35 }),
+    part(box(3.1, 0.1, 0.85), B, { y: 0.45, z: -7.7 }),
+    part(cyl(0.2, 0.2, 0.18, 8), D, { y: -0.4, z: -7.6, rz: Math.PI / 2 }),
+    // stub wings with rocket pods and missile rails
+    part(box(4.4, 0.14, 1.1), B, { y: -0.05, z: 0.1 }),
+    part(cyl(0.3, 0.3, 1.7, 10), M, { x: 1.6, y: -0.45, z: 0.25, rx: Math.PI / 2 }),
+    part(cyl(0.3, 0.3, 1.7, 10), M, { x: -1.6, y: -0.45, z: 0.25, rx: Math.PI / 2 }),
+    part(box(0.12, 0.12, 1.6), D, { x: 2.2, y: -0.3, z: 0.2 }),
+    part(box(0.12, 0.12, 1.6), D, { x: -2.2, y: -0.3, z: 0.2 }),
+    // chin gun turret
+    part(sphere(0.32, 8, 6), D, { y: -0.95, z: 2.75 }),
+    part(cyl(0.07, 0.07, 1.5, 6), D, { y: -1.0, z: 3.55, rx: Math.PI / 2 }),
+    // main landing gear
+    part(cyl(0.32, 0.32, 0.22, 10), D, { x: 0.9, y: -1.45, z: 1.0, rz: Math.PI / 2 }),
+    part(cyl(0.32, 0.32, 0.22, 10), D, { x: -0.9, y: -1.45, z: 1.0, rz: Math.PI / 2 }),
+    part(box(0.12, 0.7, 0.12), D, { x: 0.85, y: -1.1, z: 1.0, rz: 0.3 }),
+    part(box(0.12, 0.7, 0.12), D, { x: -0.85, y: -1.1, z: 1.0, rz: -0.3 }),
   ]);
   const rotor = merge([
-    part(box(13.5, 0.08, 0.55), D, {}),
-    part(box(0.55, 0.08, 13.5), D, {}),
-    part(cyl(0.35, 0.35, 0.3, 8), D, {}),
+    part(box(13.8, 0.07, 0.5), D, {}),
+    part(box(0.5, 0.07, 13.8), D, {}),
+    part(cyl(0.4, 0.4, 0.32, 8), D, {}),
   ]);
   const tail = merge([part(box(0.06, 2.4, 0.3), D, {}), part(box(0.06, 0.3, 2.4), D, {})]);
   return { body, rotor, tail };
@@ -246,12 +290,16 @@ export class Military {
     tail.position.set(0.25, 1.1, -8.3);
     group.add(body, rotor, tail);
     body.castShadow = true;
-    const light = new THREE.Mesh(new THREE.SphereGeometry(0.18, 6, 4), new THREE.MeshBasicMaterial({ color: new THREE.Color(5, 0.4, 0.3), toneMapped: false }));
-    light.position.set(0, -1.0, 0);
-    group.add(light);
+    // navigation lights: red port, green starboard, white tail strobe, red anti-collision beacon
+    const navGeo = new THREE.SphereGeometry(0.16, 6, 4);
+    const nav = (c, x, y, z) => { const m = new THREE.Mesh(navGeo, new THREE.MeshBasicMaterial({ color: c })); m.position.set(x, y, z); group.add(m); return m; };
+    nav(new THREE.Color(6, 0.2, 0.15), 2.3, -0.05, 0.1);
+    nav(new THREE.Color(0.2, 6, 0.6), -2.3, -0.05, 0.1);
+    const strobe = nav(new THREE.Color(9, 9, 9), 0, 1.9, -8.6);
+    const light = nav(new THREE.Color(7, 0.3, 0.2), 0, -1.0, 0);
     this.ctx.root.add(group);
     const h = {
-      group, rotor, tail, light, hp: 1, x: g.pos.x + Math.cos(a) * 220, y: 70, z: g.pos.z + Math.sin(a) * 220,
+      group, rotor, tail, light, strobe, hp: 1, x: g.pos.x + Math.cos(a) * 220, y: 70, z: g.pos.z + Math.sin(a) * 220,
       vx: 0, vy: 0, vz: 0, yaw: 0, roll: 0, pitch: 0, orbitA: a, orbitR: 55 + Math.random() * 20, dir: Math.random() < 0.5 ? 1 : -1,
       fireCd: 3, burst: 0, burstCd: 0, rocketCd: 6 + Math.random() * 4, state: 'fly', swoop: 0, swoopCd: 8 + Math.random() * 6, t: 0, held: false, band: Math.random(),
     };
@@ -464,6 +512,7 @@ export class Military {
         t.burn -= dt;
         if (Math.random() < 0.45) ctx.fx.smoke(t.x, t.y + 2.5, t.z, 3, 0.1, 5, 4);
         if (Math.random() < 0.5) ctx.fx.fire(t.x, t.y + 1.8, t.z, 2);
+        ctx.lights.pulse(t.x, t.z, 0.9, 0.38, 0.1, 12);
       }
       if (t.hp <= 0) continue;
       const dx = g.pos.x - t.x, dz = g.pos.z - t.z;
@@ -499,6 +548,7 @@ export class Military {
       if (Math.abs(t.speed) > 1 && ctx.traffic) ctx.traffic.crush(t.x, t.z, 3.2);
       t.group.position.set(t.x, t.y, t.z);
       t.group.rotation.set(0, t.yaw, 0);
+      ctx.lights.pulse(t.x + Math.sin(t.yaw) * 12, t.z + Math.cos(t.yaw) * 12, 0.5, 0.48, 0.42, 11);
       // turret tracks the monster
       const aimYaw = Math.atan2(dx, dz) - t.yaw;
       t.turretYaw = dampAngle(t.turretYaw, aimYaw, 2.2, dt);
@@ -566,6 +616,7 @@ export class Military {
         if (h.burn > 0) {
           if (Math.random() < 0.4) ctx.fx.smoke(h.x, h.y + 1, h.z, 3, 0.1, 5, 4);
           if (Math.random() < 0.4) ctx.fx.fire(h.x, h.y + 0.5, h.z, 2);
+          ctx.lights.pulse(h.x, h.z, 0.9, 0.38, 0.1, 12);
         }
         continue;
       }
@@ -576,6 +627,7 @@ export class Military {
         h.roll += dt * 0.6;
         if (Math.random() < 0.9) ctx.fx.smoke(h.x, h.y, h.z, 3.5, 0.08, 4, 1);
         if (Math.random() < 0.7) ctx.fx.fire(h.x, h.y, h.z, 2.2);
+        ctx.fx.sparks(new THREE.Vector3(h.x, h.y, h.z), new THREE.Vector3(0, -1, 0), 2, [1, 0.8, 0.4]);
         const ground = ctx.city.groundAt(h.x, h.z, h.y + 1);
         const hitB = ctx.city.solidAt(h.x, h.y, h.z);
         if (h.y <= ground + 1 || hitB) {
@@ -656,6 +708,7 @@ export class Military {
       h.pitch += (clamp(lon * 0.02, -0.35, 0.35) - h.pitch) * Math.min(1, dt * 3);
       this._placeHeli(h);
       h.light.visible = Math.floor(h.t * 2) % 2 === 0;
+      h.strobe.visible = (h.t * 1.3) % 1 < 0.06;
       // weapons
       const d = Math.hypot(g.pos.x - h.x, g.pos.z - h.z);
       if (!g.alive || this.retreat || this.ceaseFire) continue;
