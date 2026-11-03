@@ -46,7 +46,7 @@ const fragMain = /* glsl */`
     vec3 ab = uFocus - uCamPos;
     float t = clamp(dot(vWPos - uCamPos, ab) / dot(ab, ab), 0.0, 1.0);
     float dist = length(vWPos - (uCamPos + ab * t));
-    float rad = mix(4.0, 13.0, t);
+    float rad = mix(2.5, 8.0, t);
     if (t < 0.93 && dist < rad) {
       float k = smoothstep(rad, rad * 0.55, dist) * 0.82;
       if (bayer4(gl_FragCoord.xy) < k) discard;

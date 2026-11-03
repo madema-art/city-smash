@@ -1,3 +1,5 @@
+// Numerically solves the gorilla climbing grip poses (hands/feet planted on a wall plane).
+// Results are pasted into ARM_*/LEG_* in src/monster/GorillaAnimator.js. Run: node tools/solve-climb-pose.mjs
 import * as THREE from 'three';
 import { createSkeleton } from '../src/monster/GorillaModel.js';
 import { Pose, applyPose } from '../src/monster/GorillaAnimator.js';

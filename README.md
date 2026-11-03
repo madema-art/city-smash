@@ -37,9 +37,31 @@ Open the printed URL (default http://localhost:5173) in a desktop Chrome, Edge o
 
 Controllers get rumble on hits, collapses and damage. The camera drifts in behind you while running if you are not using the right stick. With a controller, **aim assist** steers punches and throws toward the nearest helicopter, tank or soldier in front of the camera: jump (A) and punch (RT) to swat a low chopper. When you hold something, RT throws it at the assisted target, or toward the centre of the screen.
 
+### On a building
+
+Climbing is a full mode. Press **Y / C** next to any wall (or in mid-air, or at a roof edge to climb down).
+
+| Action | Controller | Keyboard + mouse |
+| --- | --- | --- |
+| Climb up / down | Left stick ↑ / ↓ (LB to scramble faster) | W / S (Shift) |
+| Traverse the facade, round corners | Left stick ← / → | A / D |
+| Punch the wall at your height (aim higher/lower with the camera), or backhand a passing chopper | RT | Left mouse |
+| Structural smash: tears out the floor you're hanging on | LT | Right mouse |
+| Double kick into the floor below | B | F |
+| Reach into a window and grab a person (or a hovering chopper), then eat | X | E |
+| Leap off the wall (toward a chopper if one is in view) | A | Space |
+| Let go | Y | C |
+| Roar from the side of the tower | RB | Q |
+
+You can stop and hang at any height. You haul yourself onto roofs and setback ledges when your hands run out of wall. Steering into a wall in mid-air grabs it again. If the wall you're holding is smashed or collapses, you slip, regrip or fall. People come to the windows near you, waving for help. Punch their window and they tumble out; reach in and they're a snack. Helicopters fly at your altitude in front of the facade and make close passes you can swat. Tanks can't elevate their guns high enough to reach you near the top of a tower.
+
 ## Goal
 
 Destroy **60%** of the city before the military takes you down. Military response escalates with destruction and time: infantry first, then helicopters, then tanks, up to six levels. Eating civilians or soldiers restores health. Press restart at any time to start over instantly.
+
+## Look
+
+Daylight uses AgX tone mapping with a physically based sun, hemisphere light and sky environment. The sky shader is scaled into the same brightness range as the city, with drifting clouds. Half-resolution ground-truth ambient occlusion (GTAO) adds contact shadows. Bloom only fires on genuinely hot pixels (fire, explosions, tracers). A display-space grade adds saturation, contrast and a vignette. The facade shader controls sky reflection separately for glass and walls, so windows read as glass without flattening the walls. Tuning lives in `LOOK` in `src/render/Renderer.js`. Add `?ao=0` to the URL to turn the AO pass off.
 
 ## How the destruction works
 
@@ -70,4 +92,6 @@ To add another monster, implement the same `update / damage / held` surface as `
 * `?low=1` uses smaller shadows and turns off bloom and MSAA (useful on weak GPUs).
 * `?view=gorilla&poses=idle,walk:0.25,punch:0.45` opens a pose viewer for the gorilla rig.
 * `?test=1` runs a deterministic mode: there is no animation loop, and time advances only through `window.__game.tick(frames)` / `renderOnce()`.
+* `node tools/elevtest.mjs <outDir>` is the vertical play-test, driven by a virtual gamepad. It covers these steps: attach to a skyscraper, climb to the 10th floor, hold, traverse, punch a hole at that height (checking that only floors 9–11 break), grab and eat a person from a window, keep climbing, swat a helicopter, leap at another and punch it mid-air, re-grab the tower, climb onto the roof, and jump back down to the street. At every step it checks that the camera is not inside geometry, the gorilla is not occluded, and the camera is on the open side of the wall.
+* `node tools/looktest.mjs <outDir>` renders fixed street, aerial, close-up and collapse viewpoints for lighting review.
 * `node tools/padtest.mjs <outDir>` drives the game in test mode through a virtual gamepad in headless Chromium (needs the dev server running). It moves, sprints, turns the camera, punches, smashes, stomps, collapses a tower, eats, throws a car, swats a helicopter and pauses/restarts, printing game state after each step.

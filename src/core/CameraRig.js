@@ -51,7 +51,7 @@ export class CameraRig {
     // framing: pull back with altitude so the drop and nearby aircraft stay readable
     let want = 34;
     if (sprint) want = 40;
-    if (climbing) want = 34 + clamp((height - 12) / 6, 0, 10);
+    if (climbing) want = 27 + clamp((height - 12) / 6, 0, 9);
     else if (g.state === 'ground' && height > 8) want = 38 + clamp((height - 8) / 10, 0, 6);
     if (g.action && g.action.name === 'smash') want = 30;
     if (g.state === 'dead') want = 48;
@@ -96,12 +96,44 @@ export class CameraRig {
     if (outward > 0 && c) { pivot.x += c.nx * 3 * outward; pivot.z += c.nz * 3 * outward; pivot.y += 3 * outward; }
     // obstruction: pull in (partially) when a building blocks the view; the facade shader
     // dithers away anything still in between.
-    const back = dir.clone().negate();
-    let dist = this.dist;
-    const hit = this.ctx.city.raycast(pivot, back, dist, 1.5);
-    if (hit > 0) dist = Math.max(climbing ? 3 : 16, hit - 2);
-    this.curDist = dist < this.curDist ? damp(this.curDist, dist, 14, dt) : damp(this.curDist, dist, 2.5, dt);
+    // Obstruction: first try lifting the camera over whatever is behind (low buildings, ledges),
+    // then pull in toward the monster. The camera never ends up inside a building.
+    const city = this.ctx.city;
+    const backOf = (lift) => {
+      const p = clamp(this.pitch - lift, -1.35, 0.6);
+      return new THREE.Vector3(-Math.sin(this.yaw) * Math.cos(p), -Math.sin(p), -Math.cos(this.yaw) * Math.cos(p));
+    };
+    let camWant = this.dist, liftWant = 0;
+    if (climbing && c) {
+      // stay inside the street in front of the facade: measure how much open air there is
+      const o = new THREE.Vector3(this.smoothTarget.x, this.smoothTarget.y, this.smoothTarget.z);
+      const nrm = new THREE.Vector3(c.nx, 0, c.nz);
+      const clear = city.raycast(o, nrm, 70, 1.5);
+      if (clear > 0) {
+        const b0 = backOf(0);
+        const horiz = Math.max(0.25, b0.x * c.nx + b0.z * c.nz);
+        camWant = Math.min(camWant, Math.max(9, (clear - 2.5) / horiz));
+      }
+    }
+    let hit = city.raycast(pivot, backOf(this.lift || 0), camWant, 1);
+    if (hit > 0) {
+      let found = false;
+      for (const lift of [0, 0.25, 0.5, 0.8]) {
+        const h = city.raycast(pivot, backOf(lift), camWant, 1);
+        if (h < 0 || h > 14) { liftWant = lift; camWant = h < 0 ? camWant : h - 2; found = true; break; }
+      }
+      if (!found) { liftWant = 0.5; hit = city.raycast(pivot, backOf(0.5), camWant, 1); camWant = hit > 0 ? Math.max(3.5, hit - 1.5) : camWant; }
+    }
+    this.lift = damp(this.lift || 0, liftWant, 4, dt);
+    const back = backOf(this.lift);
+    // re-check along the smoothed direction so the camera can't clip while easing
+    const hit2 = city.raycast(pivot, back, Math.max(camWant, this.curDist), 1);
+    if (hit2 > 0) camWant = Math.min(camWant, Math.max(3.5, hit2 - 1.5));
+    this.curDist = camWant < this.curDist ? damp(this.curDist, camWant, 18, dt) : damp(this.curDist, camWant, 2.5, dt);
+    if (hit2 > 0 && this.curDist > hit2 - 1) this.curDist = Math.max(3, hit2 - 1);
     const pos = pivot.clone().addScaledVector(back, this.curDist);
+    // look at the pivot along the actual (possibly lifted) direction
+    dir.copy(back).negate();
     // never under the street / rubble
     const floor = this.ctx.city.groundAt(pos.x, pos.z, pos.y + 2) + 1.5;
     if (pos.y < floor) pos.y = floor;
