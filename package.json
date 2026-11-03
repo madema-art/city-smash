@@ -1,0 +1,20 @@
+{
+  "name": "city-smash",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Kong-sized arcade destruction: a giant silverback versus a living city.",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "smoke": "node tools/smoke.mjs"
+  },
+  "dependencies": {
+    "@dimforge/rapier3d-compat": "^0.21.0",
+    "three": "^0.187.0"
+  },
+  "devDependencies": {
+    "vite": "^7.3.7"
+  }
+}

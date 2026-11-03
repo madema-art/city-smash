@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>City Smash</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Bungee&family=Barlow+Condensed:wght@500;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="hud" class="hidden">
+      <div class="hud-top-left">
+        <div class="label">SILVERBACK</div>
+        <div class="bar health"><div class="fill" id="health-fill"></div><div class="ghost" id="health-ghost"></div></div>
+        <div class="sub" id="health-text">100</div>
+      </div>
+      <div class="hud-top-right">
+        <div class="label">CITY DESTROYED</div>
+        <div class="destroy"><span id="destroy-pct">0</span><span class="pct">%</span></div>
+        <div class="bar destruction"><div class="fill" id="destroy-fill"></div><div class="goal" id="destroy-goal"></div></div>
+        <div class="sub">Goal <span id="goal-pct">60</span>%</div>
+      </div>
+      <div class="hud-top-center">
+        <div class="threat-label">MILITARY RESPONSE</div>
+        <div class="threat" id="threat"></div>
+      </div>
+      <div class="hud-bottom-left" id="score-box">
+        <div class="score"><span id="score">0</span></div>
+        <div class="tally" id="tally"></div>
+      </div>
+      <div class="hud-bottom-right" id="hint"></div>
+      <div id="crosshair"></div>
+      <div id="callouts"></div>
+      <div id="grab-hint"></div>
+    </div>
+    <div id="overlay">
+      <div class="panel" id="title-panel">
+        <div class="kicker">AN ARCADE RAMPAGE</div>
+        <h1>CITY<br />SMASH</h1>
+        <p class="tag">You are a 15-metre silverback. The city is made of glass and concrete. Show it who's boss.</p>
+        <div class="controls">
+          <div><b>WASD</b> move</div><div><b>Mouse</b> look</div>
+          <div><b>Shift</b> sprint</div><div><b>Space</b> jump</div>
+          <div><b>LMB</b> punch</div><div><b>RMB</b> heavy smash</div>
+          <div><b>E</b> grab / eat / throw</div><div><b>F</b> ground stomp</div>
+          <div><b>C</b> climb / let go</div><div><b>Q</b> chest-beat roar</div>
+        </div>
+        <div class="controls pad">
+          <div><b>L-STICK</b> move</div><div><b>R-STICK</b> look</div>
+          <div><b>LB / L3</b> sprint</div><div><b>A</b> jump</div>
+          <div><b>RT</b> punch</div><div><b>LT</b> heavy smash</div>
+          <div><b>X</b> grab / eat / throw</div><div><b>B</b> ground stomp</div>
+          <div><b>Y</b> climb / let go</div><div><b>RB</b> roar</div>
+        </div>
+        <button id="start-btn">CLICK TO RAMPAGE</button>
+        <div class="loading" id="pad-status">🎮 Controller supported — press any button on it to connect</div>
+        <div class="loading" id="loading">Sculpting gorilla…</div>
+      </div>
+      <div class="panel hidden" id="end-panel">
+        <h1 id="end-title">CITY FLATTENED</h1>
+        <p class="tag" id="end-sub"></p>
+        <div class="stats" id="end-stats"></div>
+        <button id="restart-btn">PLAY AGAIN (ENTER / A)</button>
+      </div>
+      <div class="panel hidden" id="pause-panel">
+        <h1>PAUSED</h1>
+        <p class="tag">Click or press Start to resume. R / Back to restart.</p>
+      </div>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
