@@ -53,7 +53,7 @@ const fragMain = /* glsl */`
     }
   }
 
-  vec3 bAlb = uWallA; float bRough = 0.85; float bMetal = 0.0; vec3 bEmis = vec3(0.0); float bAO = 1.0;
+  vec3 bAlb = uWallA; float bRough = 0.85; float bMetal = 0.0; vec3 bEmis = vec3(0.0); float bAO = 1.0; float bRefl = 0.8;
   vec3 n = vObjN;
   float bitv; vec2 fc; int axis;
   if (abs(n.x) > 0.5) { bitv = n.x > 0.0 ? 1.0 : 2.0; fc = vec2(vLocal.z * sign(n.x), vLocal.y); axis = 0; }
@@ -136,8 +136,15 @@ const fragMain = /* glsl */`
     float hole = broken * inner;
 
     vec3 winCol = mix(glass, interior, uStyle < 0.5 ? blinds * 0.6 : 0.35 + blinds * 0.5);
-    float winRough = uStyle < 0.5 ? 0.04 : 0.12;
-    float winMetal = uStyle < 0.5 ? 0.85 : 0.55;
+    float occ = step(1.0, vInfo.z) * (1.0 - broken);
+    if (occ > 0.5) {
+      // window flung open: lit room, ceiling light, darker floor band
+      vec3 room = mix(vec3(0.55, 0.38, 0.22), vec3(0.95, 0.78, 0.5), smoothstep(sill, top, fv));
+      winCol = room;
+      bEmis += vec3(1.0, 0.7, 0.42) * inWin * 0.55;
+    }
+    float winRough = mix(uStyle < 0.5 ? 0.04 : 0.12, 0.9, occ);
+    float winMetal = mix(uStyle < 0.5 ? 0.85 : 0.55, 0.0, occ);
     winCol = mix(winCol, vec3(0.012, 0.011, 0.012), hole);
     winRough = mix(winRough, 0.95, hole);
     winMetal = mix(winMetal, 0.0, hole);
@@ -149,7 +156,12 @@ const fragMain = /* glsl */`
     bAlb = mix(bAlb, winCol, inWin);
     bRough = mix(bRough, winRough, inWin);
     bMetal = mix(bMetal, winMetal, inWin);
-    bEmis = vec3(1.0, 0.75, 0.45) * lit * inWin * (1.0 - hole) * 0.35;
+    bEmis += vec3(1.0, 0.75, 0.45) * lit * inWin * (1.0 - hole) * 0.35;
+    // glass reflects the sky strongly; walls only a little
+    bRefl = mix(0.7, uStyle < 0.5 ? 2.6 : 1.9, inWin * (1.0 - hole) * (1.0 - occ));
+    // recessed windows: darker frame edge around each pane
+    float rim = inWin * (1.0 - boxAA(fu, 0.5 - winHalf + 0.03, 0.5 + winHalf - 0.03, 0.01) * boxAA(fv, sill + 0.03, top - 0.03, 0.01));
+    bAO *= 1.0 - rim * 0.55;
 
     if (ground > 0.5) {
       // signage band above storefronts
@@ -171,7 +183,7 @@ const fragMain = /* glsl */`
       bMetal = mix(bMetal, 0.0, cap);
     }
     // grime streaks near the base and under windows
-    float grime = (1.0 - smoothstep(0.0, 6.0, fc.y)) * 0.25 + bfbm(vec2(fc.x * 0.6, fc.y * 0.08) + uSeed) * 0.12;
+    float grime = (1.0 - smoothstep(0.0, 5.0, fc.y)) * 0.32 + bfbm(vec2(fc.x * 0.6, fc.y * 0.08) + uSeed) * 0.14;
     bAlb *= 1.0 - grime;
   } else if (ext > 0.5) {
     // ---------------- roof ----------------
@@ -263,9 +275,10 @@ export function createBuildingMaterial(style) {
       .replace('#include <color_fragment>', `#include <color_fragment>\n diffuseColor.rgb = bAlb;`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>\n roughnessFactor = bRough;`)
       .replace('#include <metalnessmap_fragment>', `#include <metalnessmap_fragment>\n metalnessFactor = bMetal;`)
-      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>\n totalEmissiveRadiance += bEmis;`);
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>\n totalEmissiveRadiance += bEmis;`)
+      .replace('#include <lights_fragment_maps>', `#include <lights_fragment_maps>\n iblIrradiance *= 0.8 * bAO; radiance *= bRefl;`);
   };
-  mat.customProgramCacheKey = () => 'cs-building-v1';
+  mat.customProgramCacheKey = () => 'cs-building-v3';
   return mat;
 }
 

@@ -16,6 +16,7 @@ import { buildGorillaGeometry } from '../monster/GorillaModel.js';
 import { Crowd } from '../city/Crowd.js';
 import { Traffic } from '../city/Traffic.js';
 import { Military } from '../enemies/Military.js';
+import { WindowPeople } from '../city/WindowPeople.js';
 import { Audio } from '../audio/Audio.js';
 import { HUD } from '../ui/HUD.js';
 import { DESTRUCTION } from '../config.js';
@@ -149,6 +150,7 @@ export class Game {
     ctx.gorilla = new Gorilla(ctx, new THREE.Vector3(0, 0, 150));
     ctx.cameraRig = new CameraRig(this.renderer.camera, ctx);
     ctx.crowd = new Crowd(ctx, 320);
+    ctx.windows = new WindowPeople(ctx);
     ctx.traffic = new Traffic(ctx);
     ctx.military = new Military(ctx);
     this.level = { ctx, root, time: 0, endT: 0, introDone: false, score: 0, grabCheck: 0, grabHint: '', toppled: new Set() };
@@ -198,6 +200,12 @@ export class Game {
     E.on('roar', () => R(0.5, 0.9, 1500));
     E.on('grab', () => R(0.2, 0.3, 80));
     E.on('eat', () => R(0.15, 0.5, 400));
+    // climbing feedback: firm thump per wall punch, heavy for structural smashes
+    E.on('climbHit', (e) => R(e.heavy ? 0.85 : 0.45, e.heavy ? 0.5 : 0.7, e.heavy ? 260 : 110));
+    E.on('climbStep', () => R(0.08, 0.05, 50));
+    E.on('lostGrip', () => { R(0.6, 0.8, 350); hud.callout('LOST GRIP!', 'warn small'); });
+    E.on('slip', () => R(0.25, 0.6, 300));
+    E.on('mantle', () => R(0.35, 0.2, 180));
     const L = () => this.level;
     const camDist = (x, y, z) => this.renderer.camera.position.distanceTo(_v.set(x, y, z));
     E.on('impact', (e) => {
@@ -284,7 +292,20 @@ export class Game {
     });
     E.on('gorillaDeath', () => { hud.callout('THE SILVERBACK FALLS', 'warn'); A.roar(ctx.gorilla.chest, false); });
     E.on('mantle', () => A.grunt(ctx.gorilla.chest));
-    E.on('climbStart', () => A.grunt(ctx.gorilla.chest));
+    E.on('climbStep', (e) => A.step(e.p, 0.18));
+    E.on('climbCorner', () => A.grunt(ctx.gorilla.chest));
+    E.on('lostGrip', () => A.grunt(ctx.gorilla.chest));
+    E.on('slip', (e) => A.concrete(e.p, 0.5));
+    E.on('windowGrab', (e) => { A.scream(e); A.glass(e, 1); });
+    E.on('climbStart', () => {
+      A.grunt(ctx.gorilla.chest);
+      const n = (this.climbHints = (this.climbHints || 0) + 1);
+      if (n <= 2) {
+        hud.hint(this.input.lastDevice === 'pad'
+          ? '<b>L-STICK</b> climb · <b>RT</b> punch wall · <b>LT</b> smash floor · <b>B</b> kick · <b>X</b> grab from window · <b>A</b> leap · <b>Y</b> let go'
+          : '<b>W/S</b> climb · <b>A/D</b> traverse · <b>LMB</b> punch wall · <b>RMB</b> smash floor · <b>F</b> kick · <b>E</b> grab from window · <b>Space</b> leap · <b>C</b> let go', 8);
+      }
+    });
   }
 
   // ---------------- main loop ----------------
@@ -361,6 +382,7 @@ export class Game {
     const camPos = this.renderer.camera.position;
     ctx.military.update(dt, camPos);
     ctx.crowd.update(dt, camPos);
+    ctx.windows.update(dt, camPos);
     ctx.traffic.update(dt);
     ctx.physics.step(dt);
     ctx.city.update(dt);

@@ -70,6 +70,17 @@ export class Crowd {
     }
   }
 
+  // Someone thrown / falling from a window into the street.
+  spawnFlying(x, y, z, vx, vy, vz, colors) {
+    const h = {
+      x, y, z, yaw: Math.atan2(vx, vz), phase: 0, anim: 'fly', state: 'fly', vertical: true, line: 0, dir: 1, speed: 6,
+      colors: colors || this._colors(), panic: 10, vx, vy, vz, dead: 0, scale: 1.05, fleeX: 0, fleeZ: 0, idle: 0,
+      spin: (Math.random() - 0.5) * 10, tx: 0,
+    };
+    this.people.push(h);
+    return h;
+  }
+
   alarm(p, radius, roar = false) {
     const r2 = radius * radius;
     for (const h of this.people) {

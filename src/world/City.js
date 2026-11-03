@@ -15,32 +15,32 @@ export const CITY_HALF = HALF;
 
 const PALETTES = {
   [STYLES.GLASS]: [
-    { wallA: 0x2a3138, wallB: 0x384350, glass: 0x4f7186, trim: 0xa7b0b8, roof: 0x55585c },
-    { wallA: 0x3b3f44, wallB: 0x2b2f33, glass: 0x5d7f8f, trim: 0xc9ccd0, roof: 0x4c4f53 },
-    { wallA: 0x26303a, wallB: 0x1f2830, glass: 0x7a8f9c, trim: 0x8d99a3, roof: 0x505357 },
-    { wallA: 0x3d3a35, wallB: 0x2e2c29, glass: 0x8c7b5e, trim: 0xb3a58a, roof: 0x5b5753 },
+    { wallA: 0x223040, wallB: 0x2c3d52, glass: 0x2f5f86, trim: 0x9aa6b2, roof: 0x45484c },
+    { wallA: 0x34393f, wallB: 0x262a2f, glass: 0x3d7a86, trim: 0xb8bcc2, roof: 0x404346 },
+    { wallA: 0x1e2a36, wallB: 0x18222c, glass: 0x4a6f92, trim: 0x7f8c98, roof: 0x45484b },
+    { wallA: 0x3a3226, wallB: 0x2b251c, glass: 0x8a6a36, trim: 0xb39a6a, roof: 0x4d4943 },
   ],
   [STYLES.RIBBON]: [
-    { wallA: 0xcdc8bd, wallB: 0xb8b2a6, glass: 0x34444f, trim: 0x8e8a83, roof: 0x6a6762 },
-    { wallA: 0xd8d4cc, wallB: 0xc4bfb6, glass: 0x2b3b45, trim: 0x9a958d, roof: 0x5e5c58 },
-    { wallA: 0x9da3a6, wallB: 0x8c9295, glass: 0x26313a, trim: 0x6d7276, roof: 0x55585a },
+    { wallA: 0xb9b0a0, wallB: 0xa59c8c, glass: 0x27404f, trim: 0x7d7568, roof: 0x5a5752 },
+    { wallA: 0xc4bba9, wallB: 0xb0a794, glass: 0x22384a, trim: 0x8a2f24, roof: 0x55524e },
+    { wallA: 0x7f8f99, wallB: 0x6e7e88, glass: 0x1f3442, trim: 0x535f66, roof: 0x4a4d50 },
   ],
   [STYLES.BRICK]: [
-    { wallA: 0x8a3b26, wallB: 0x6e2c1d, glass: 0x2a343c, trim: 0xe6e0d4, roof: 0x3a3634 },
-    { wallA: 0xa86b4a, wallB: 0x8c563b, glass: 0x26313a, trim: 0xefe8da, roof: 0x403b37 },
-    { wallA: 0x6a3a2e, wallB: 0x553026, glass: 0x232d35, trim: 0xd9d1c2, roof: 0x34302d },
-    { wallA: 0xb59a74, wallB: 0x9c8462, glass: 0x26313a, trim: 0xf0ebe0, roof: 0x45413c },
+    { wallA: 0x8f3420, wallB: 0x6d2617, glass: 0x1f2c36, trim: 0xd9d1c0, roof: 0x34302d },
+    { wallA: 0xa45f37, wallB: 0x86492a, glass: 0x1f2c36, trim: 0xe3dccb, roof: 0x3a3531 },
+    { wallA: 0x5e2f25, wallB: 0x4a241c, glass: 0x1d2830, trim: 0xcfc4b0, roof: 0x2e2a27 },
+    { wallA: 0xae8a58, wallB: 0x937346, glass: 0x1f2c36, trim: 0xe6dfcf, roof: 0x3d3934 },
   ],
   [STYLES.DECO]: [
-    { wallA: 0xd6c9a8, wallB: 0xc7b893, glass: 0x1f282e, trim: 0x9e8f6c, roof: 0x6b655a },
-    { wallA: 0xcfc2b0, wallB: 0xbcae9b, glass: 0x1c2328, trim: 0x8a7c66, roof: 0x625c53 },
+    { wallA: 0xc9b688, wallB: 0xb8a376, glass: 0x1a242b, trim: 0x8c7a52, roof: 0x5c564c },
+    { wallA: 0xc2ad94, wallB: 0xae9980, glass: 0x182027, trim: 0x6f2e2a, roof: 0x57514a },
   ],
   [STYLES.SHOP]: [
-    { wallA: 0xe3c39a, wallB: 0xd8b386, glass: 0x2d3a42, trim: 0xf6f1e7, roof: 0x5a5651 },
-    { wallA: 0x9cc3b7, wallB: 0x8ab3a6, glass: 0x2d3a42, trim: 0xf6f1e7, roof: 0x55524e },
-    { wallA: 0xe8dcc3, wallB: 0xdccfb2, glass: 0x2d3a42, trim: 0xb04a3a, roof: 0x5a5651 },
-    { wallA: 0xd98f6f, wallB: 0xc97d5f, glass: 0x2d3a42, trim: 0xf6f1e7, roof: 0x524e4a },
-    { wallA: 0xa9b7d0, wallB: 0x98a7c2, glass: 0x2d3a42, trim: 0xf6f1e7, roof: 0x55524e },
+    { wallA: 0xe0a868, wallB: 0xd09658, glass: 0x22323c, trim: 0xf2ece0, roof: 0x4f4b46 },
+    { wallA: 0x5fa894, wallB: 0x4f967f, glass: 0x22323c, trim: 0xf2ece0, roof: 0x4a4744 },
+    { wallA: 0xe2cfa4, wallB: 0xd3bf92, glass: 0x22323c, trim: 0xb03a28, roof: 0x4f4b46 },
+    { wallA: 0xd06a48, wallB: 0xbc5a3a, glass: 0x22323c, trim: 0xf2ece0, roof: 0x4a4642 },
+    { wallA: 0x6f8fc4, wallB: 0x5f7fb4, glass: 0x22323c, trim: 0xf2ece0, roof: 0x4a4744 },
   ],
 };
 const WIN = {
@@ -77,11 +77,11 @@ function groundMaterial(scorchTex) {
         float swX = step(dc.x, 11.0), swZ = step(dc.y, 11.0);
         float n = gf(w * 0.15);
         float fine = gn(w * 3.0);
-        vec3 asphalt = vec3(0.105, 0.108, 0.115) * (0.8 + 0.35 * n + 0.1 * fine);
-        vec3 walk = vec3(0.56, 0.54, 0.5) * (0.85 + 0.2 * n);
+        vec3 asphalt = vec3(0.07, 0.072, 0.078) * (0.75 + 0.45 * n + 0.15 * fine);
+        vec3 walk = vec3(0.36, 0.345, 0.32) * (0.8 + 0.3 * n);
         float tile = band(fract(w.x / 2.0), 0.03, 0.97) * band(fract(w.y / 2.0), 0.03, 0.97);
         walk *= mix(0.82, 1.0, tile);
-        vec3 plaza = vec3(0.47, 0.46, 0.43) * (0.85 + 0.25 * n);
+        vec3 plaza = vec3(0.3, 0.285, 0.26) * (0.8 + 0.35 * n);
         float ptile = band(fract(w.x / 4.0), 0.02, 0.98) * band(fract(w.y / 4.0), 0.02, 0.98);
         plaza *= mix(0.8, 1.0, ptile);
         vec3 col = plaza;
@@ -90,7 +90,7 @@ function groundMaterial(scorchTex) {
         col = mix(col, walk, side);
         // curb
         float curbX = band(dc.x, 7.0, 7.4) * (1.0 - onZ), curbZ = band(dc.y, 7.0, 7.4) * (1.0 - onX);
-        col = mix(col, vec3(0.68, 0.66, 0.62), max(curbX, curbZ));
+        col = mix(col, vec3(0.46, 0.44, 0.41), max(curbX, curbZ));
         col = mix(col, asphalt, road);
         float inter = onX * onZ;
         // markings on the vertical (along-z) roads
@@ -98,22 +98,22 @@ function groundMaterial(scorchTex) {
           float yel = band(dc.x, 0.12, 0.32);
           float dash = band(dc.x, 3.38, 3.62) * step(fract(w.y / 9.0), 0.5);
           float edge = band(dc.x, 6.5, 6.7);
-          col = mix(col, vec3(0.85, 0.65, 0.12), yel);
-          col = mix(col, vec3(0.86), max(dash, edge));
+          col = mix(col, vec3(0.75, 0.52, 0.06), yel);
+          col = mix(col, vec3(0.62), max(dash, edge));
         }
         if (onZ > 0.5 && swX < 0.5) {
           float yel = band(dc.y, 0.12, 0.32);
           float dash = band(dc.y, 3.38, 3.62) * step(fract(w.x / 9.0), 0.5);
           float edge = band(dc.y, 6.5, 6.7);
-          col = mix(col, vec3(0.85, 0.65, 0.12), yel);
-          col = mix(col, vec3(0.86), max(dash, edge));
+          col = mix(col, vec3(0.75, 0.52, 0.06), yel);
+          col = mix(col, vec3(0.62), max(dash, edge));
         }
         // crosswalks
-        if (onX > 0.5 && band(dc.y, 7.6, 10.6) > 0.5) col = mix(col, vec3(0.85), step(0.5, fract(w.x / 1.6)) * 0.9);
-        if (onZ > 0.5 && band(dc.x, 7.6, 10.6) > 0.5) col = mix(col, vec3(0.85), step(0.5, fract(w.y / 1.6)) * 0.9);
+        if (onX > 0.5 && band(dc.y, 7.6, 10.6) > 0.5) col = mix(col, vec3(0.6), step(0.5, fract(w.x / 1.6)) * 0.9);
+        if (onZ > 0.5 && band(dc.x, 7.6, 10.6) > 0.5) col = mix(col, vec3(0.6), step(0.5, fract(w.y / 1.6)) * 0.9);
         // outside the city: scrubby lots
         float outside = step(uHalf, max(abs(w.x), abs(w.y)));
-        vec3 grass = mix(vec3(0.27, 0.33, 0.17), vec3(0.36, 0.38, 0.22), n);
+        vec3 grass = mix(vec3(0.12, 0.2, 0.06), vec3(0.2, 0.26, 0.09), n);
         col = mix(col, grass, outside * (1.0 - road) * (1.0 - side * 0.7));
         // persistent scorch + cracks from the fight
         vec2 suv = (w + 256.0) / 512.0;
@@ -121,7 +121,7 @@ function groundMaterial(scorchTex) {
         float crack = sc.g * (1.0 - smoothstep(0.0, 0.06, abs(gf(w * 0.9) - 0.5)));
         col *= 1.0 - sc.r * 0.85;
         col *= 1.0 - crack * 0.8;
-        col = mix(col, vec3(0.42, 0.4, 0.37), sc.b * 0.6);
+        col = mix(col, vec3(0.34, 0.31, 0.27), sc.b * 0.6);
         diffuseColor.rgb = col;
       `)
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = 0.9;');
@@ -295,7 +295,7 @@ export class City {
     const ctx = this.ctx;
     const grass = new THREE.Mesh(
       new THREE.PlaneGeometry(bs - 4, bs - 4).rotateX(-Math.PI / 2),
-      new THREE.MeshStandardMaterial({ color: 0x4d6b33, roughness: 1 }),
+      new THREE.MeshStandardMaterial({ color: 0x2f5a1c, roughness: 1 }),
     );
     grass.position.set(x0 + bs / 2, 0.05, z0 + bs / 2);
     grass.receiveShadow = true;
@@ -374,7 +374,7 @@ export class City {
       this.ctx.root.add(mesh);
     }
     // distant hills
-    const hillMat = new THREE.MeshStandardMaterial({ color: 0x6f7a6a, roughness: 1, flatShading: true });
+    const hillMat = new THREE.MeshStandardMaterial({ color: 0x46583c, roughness: 1, flatShading: true });
     for (let k = 0; k < 14; k++) {
       const a = (k / 14) * Math.PI * 2 + rng() * 0.3;
       const r = 1050 + rng() * 150;

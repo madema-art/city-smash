@@ -13,8 +13,8 @@ export class FX {
     this.glow = new ParticleSystem(scene, 2500, true);
 
     const glassMat = new THREE.MeshStandardMaterial({
-      color: 0xbfe0ff, metalness: 0.9, roughness: 0.06, side: THREE.DoubleSide, envMap, envMapIntensity: 2.2,
-      emissive: 0x223344, emissiveIntensity: 0.25,
+      color: 0x9cc6e8, metalness: 0.95, roughness: 0.04, side: THREE.DoubleSide, envMap, envMapIntensity: 1.6,
+      emissive: 0x0d1820, emissiveIntensity: 0.2,
     });
     this.glass = new BallisticPieces(scene, makeShardGeometry(), glassMat, DESTRUCTION.maxGlass, { groundLinger: 4, bounce: 0.15 });
 
@@ -70,7 +70,7 @@ export class FX {
 
   // Concrete dust puff from an impact on a wall.
   impactDust(p, n, scale = 1, color = null) {
-    const c = color || _c.setRGB(0.62, 0.58, 0.52);
+    const c = color || _c.setRGB(0.46, 0.41, 0.35);
     const count = Math.round(5 * scale);
     for (let i = 0; i < count; i++) {
       const s = (2.2 + R() * 3) * scale;
@@ -85,7 +85,7 @@ export class FX {
 
   // Billowing ground-hugging dust rolling outward from a collapse.
   collapseDust(x, y, z, radius, strength = 1, color = null) {
-    const c = color || _c.setRGB(0.66, 0.62, 0.56);
+    const c = color || _c.setRGB(0.5, 0.45, 0.38);
     const count = Math.round(7 * strength);
     for (let i = 0; i < count; i++) {
       const a = R() * Math.PI * 2;
@@ -179,6 +179,7 @@ export class FX {
     m.position.set(x, y + 0.3, z);
     m.userData = { t: 0, life, r0, r1 };
     m.renderOrder = 9;
+    m.userData.noAO = true;
     this.scene.add(m);
     this.rings.push(m);
   }

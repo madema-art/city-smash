@@ -8,6 +8,8 @@ const _v = new THREE.Vector3();
 const _v2 = new THREE.Vector3();
 const _v3 = new THREE.Vector3();
 const UP = new THREE.Vector3(0, 1, 0);
+// Root distance from a facade while climbing (matches the solved climbing poses).
+const CLIMB_OFF = 3.2;
 
 // Action definitions: duration (s), normalized hit time, whether legs keep locomotion.
 const ACTIONS = {
@@ -18,7 +20,14 @@ const ACTIONS = {
   grab: { dur: 0.62, hit: 0.45, upper: true },
   eat: { dur: 1.25, hit: 0.5, upper: true },
   throw: { dur: 0.7, hit: 0.46, upper: true },
-  climbPunch: { dur: 0.5, hit: 0.42, upper: false },
+  climbPunch: { dur: 0.45, hit: 0.4, upper: false },
+  climbSmash: { dur: 0.8, hit: 0.53, upper: false },
+  climbKick: { dur: 0.6, hit: 0.45, upper: false },
+  climbGrab: { dur: 0.55, hit: 0.44, upper: false },
+  climbEat: { dur: 1.15, hit: 0.5, upper: false },
+  climbSwat: { dur: 0.5, hit: 0.42, upper: false },
+  climbThrow: { dur: 0.55, hit: 0.45, upper: false },
+  climbRoar: { dur: 2.2, hit: 0.2, upper: false },
   hit: { dur: 0.4, hit: 1, upper: true },
 };
 
@@ -66,6 +75,9 @@ export class Gorilla {
     this.handR = new THREE.Vector3();
     this.stats = { punches: 0, eaten: 0 };
     this.invuln = 0;
+    this.reattachCd = 0;
+    this.trans = null;
+    this.leapTarget = null;
     this._apply();
   }
 
@@ -83,6 +95,7 @@ export class Gorilla {
     this.rage = Math.max(0, this.rage - dt);
     this.hurtFlash = Math.max(0, this.hurtFlash - dt * 2);
     this.invuln -= dt;
+    this.reattachCd -= dt;
 
     if (this.state === 'dead') {
       this.deathT += dt;
@@ -97,7 +110,7 @@ export class Gorilla {
     const sprint = input.down('sprint');
 
     if (this.state === 'climb') {
-      this._updateClimb(dt, input, fwdIn, strafe);
+      this._updateClimb(dt, input);
     } else {
       this._updateMove(dt, input, fwdIn, strafe, sprint);
     }
@@ -106,39 +119,48 @@ export class Gorilla {
     const busy = this.action && this.action.name !== 'hit';
     const lmb = input.hit('punch'), rmb = input.hit('smash');
     if (this.state === 'climb') {
-      if (lmb && !busy) this._start('climbPunch', { side: this.punchSide = this.punchSide === 'L' ? 'R' : 'L' });
-      if (rmb && !busy) this._start('climbPunch', { side: this.punchSide = this.punchSide === 'L' ? 'R' : 'L', heavy: true });
-    } else if (this.state === 'air') {
-      if (rmb && !this.slamming) {
-        // ground slam: dive down
-        this.slamming = true;
-        this.vel.y = Math.min(this.vel.y, -38);
-        this.vel.x *= 0.5; this.vel.z *= 0.5;
-        ctx.events.emit('slamStart', { p: this.pos.clone() });
+      if (this.climb && !this.trans) {
+        if (input.hit('jump')) this._wallJump();
+        else if (input.hit('climb') && this.climb.attachT > 0.25) this._leaveClimb('drop');
+        else if (!busy) {
+          if (lmb) {
+            if (this.held && !this.held.edible) this._start('climbThrow');
+            else this._climbAttack();
+          } else if (rmb) { if (this.held) this._dropHeld(); this._start('climbSmash'); }
+          else if (input.hit('stomp')) this._start('climbKick');
+          else if (input.hit('roar') && this.roarCd <= 0) { this.roarCd = 10; this._start('climbRoar'); }
+          else if (input.hit('grab')) {
+            if (this.held) this._start(this.held.edible ? 'climbEat' : 'climbThrow');
+            else this._climbGrab();
+          }
+        }
       }
-      if (lmb && !busy) this._start('punch', { side: this.punchSide = this.punchSide === 'L' ? 'R' : 'L' });
     } else {
-      if (lmb) {
-        if (this.held) { if (!busy) this._start('throw'); }
-        else if (!busy) this._start('punch', { side: this.punchSide = this.punchSide === 'L' ? 'R' : 'L' });
-        else if (this.action.name === 'punch' && this.action.t / this.action.dur > 0.45) this.queued = 'punch';
+      if (this.state === 'air') {
+        if (rmb && !this.slamming) {
+          // ground slam: dive down
+          this.slamming = true;
+          this.vel.y = Math.min(this.vel.y, -38);
+          this.vel.x *= 0.5; this.vel.z *= 0.5;
+          ctx.events.emit('slamStart', { p: this.pos.clone() });
+        }
+        if (lmb && !busy) this._start('punch', { side: this.punchSide = this.punchSide === 'L' ? 'R' : 'L' });
+      } else {
+        if (lmb) {
+          if (this.held) { if (!busy) this._start('throw'); }
+          else if (!busy) this._start('punch', { side: this.punchSide = this.punchSide === 'L' ? 'R' : 'L' });
+          else if (this.action.name === 'punch' && this.action.t / this.action.dur > 0.45) this.queued = 'punch';
+        }
+        if (rmb && !busy) { if (this.held) this._dropHeld(); this._start('smash'); }
+        if (input.hit('stomp') && !busy && this.stompCd <= 0) { this.stompCd = 0.9; this._start('stomp'); }
+        if (input.hit('roar') && !busy && this.roarCd <= 0) { this.roarCd = 10; this._start('roar'); }
+        if (input.hit('jump') && this.grounded && (!busy || this.action.name === 'punch')) this._jump();
       }
-      if (rmb && !busy) { if (this.held) this._dropHeld(); this._start('smash'); }
-      if (input.hit('stomp') && !busy && this.stompCd <= 0) { this.stompCd = 0.9; this._start('stomp'); }
-      if (input.hit('roar') && !busy && this.roarCd <= 0) { this.roarCd = 10; this._start('roar'); }
-      if (input.hit('jump') && this.grounded && (!busy || this.action.name === 'punch')) this._jump();
-    }
-    if (input.hit('grab') && !busy) {
-      if (this.held) {
-        if (this.held.edible) this._start('eat');
-        else this._start('throw');
-      } else if (this.state !== 'climb') {
-        this._start('grab');
+      if (input.hit('grab') && !busy) {
+        if (this.held) this._start(this.held.edible ? 'eat' : 'throw');
+        else this._start('grab');
       }
-    }
-    if (input.hit('climb')) {
-      if (this.state === 'climb') this._leaveClimb(false);
-      else if (this.state === 'ground' || this.state === 'air') this._tryClimb();
+      if (input.hit('climb') && (this.state === 'ground' || this.state === 'air')) this._tryClimb();
     }
 
     this._updateAction(dt);
@@ -162,6 +184,8 @@ export class Gorilla {
   // Controller aim assist: pick the most threatening target near the camera's aim cone.
   _assistTarget(range) {
     const inp = this.ctx.input;
+    const lt = this.leapTarget;
+    if (this.state === 'air' && lt && lt.state === 'fly') return { x: lt.x, y: lt.y, z: lt.z, w: 3, air: true };
     if (!inp || inp.lastDevice !== 'pad' || !this.ctx.military) return null;
     const m = this.ctx.military;
     const cands = [];
@@ -244,6 +268,10 @@ export class Gorilla {
     const ny = this.pos.y + this.vel.y * dt;
     this.pos.x = nx; this.pos.z = nz;
     const pushed = this._collide();
+    // flying into a wall while steering at it: grab on (re-attach after a leap)
+    if (this.state === 'air' && pushed && this.reattachCd <= 0 && wl > 0 && this.vel.y < 14) {
+      if (this._tryClimb({ auto: true, wish: { x: wx, z: wz } })) return;
+    }
     // shoulder-charge: sprinting into a building smashes it
     if (pushed && sprint && hs > 14 && this.chargeCd <= 0 && this.state === 'ground') {
       this.chargeCd = 0.5;
@@ -328,12 +356,13 @@ export class Gorilla {
     this.landT = 0;
     this.landK = clamp(impactSpeed / 30, 0.25, 1);
     const p = this.pos.clone();
+    this.leapTarget = null;
     if (this.slamming) {
       this.slamming = false;
       this.ctx.combat.groundShock(p, 22, 1.6, 'slam');
       this.ctx.events.emit('slam', { p, power: 1.6 });
     } else if (impactSpeed > 16) {
-      this.ctx.combat.groundShock(p, 12 + impactSpeed * 0.2, 0.5 + impactSpeed / 50, 'land');
+      this.ctx.combat.groundShock(p, Math.min(26, 12 + impactSpeed * 0.2), Math.min(1.5, 0.5 + impactSpeed / 50), 'land');
       this.ctx.events.emit('land', { p, power: impactSpeed / 30 });
     } else {
       this.ctx.events.emit('step', { p, power: 0.5 });
@@ -341,106 +370,387 @@ export class Gorilla {
   }
 
   // ---------------- climbing ----------------
-  _tryClimb() {
+  // The monster clings to an axis-aligned facade plane. Position on the wall is (u, y): u runs
+  // along the wall, y is the root height. Grip is probed against the live building cells, so
+  // holes, collapses and corners all come from the same destruction data.
+  _u() { return this.climb.nx !== 0 ? this.pos.z : this.pos.x; }
+  _rightSign(c) { return c.nx !== 0 ? -c.nx : c.nz; } // +1 means "monster's right" increases u
+
+  // point on/behind the plane: depth > 0 is inside the building, < 0 out in the street
+  _pp(c, u, y, depth, out = _v) {
+    if (c.nx !== 0) return out.set(c.wall - c.nx * depth, y, u);
+    return out.set(u, y, c.wall - c.nz * depth);
+  }
+  _solidWall(c, u, y) {
+    const city = this.ctx.city;
+    this._pp(c, u, y, 2, _v);
+    if (city.solidAt(_v.x, _v.y, _v.z)) return true;
+    this._pp(c, u, y, 6, _v); // inner wall behind a punched-out facade cell still gives a hold
+    return city.solidAt(_v.x, _v.y, _v.z);
+  }
+  // 0..15: how many hand/foot holds exist around the monster at (u, y)
+  _grip(c, u, y) {
+    let n = 0;
+    for (const du of [-3, 0, 3]) for (const dy of [1, 5, 9, 13, 16]) if (this._solidWall(c, u + du, y + dy)) n++;
+    return n;
+  }
+  _wallRow(c, u, y) {
+    for (const du of [-3, 0, 3]) if (this._solidWall(c, u + du, y)) return true;
+    return false;
+  }
+  // is the space the body occupies (out in front of the wall) free of other walls?
+  _bodyFree(c, u, y) {
+    const city = this.ctx.city;
+    for (const dy of [3, 8, 13]) for (const d of [-1.2, -CLIMB_OFF]) {
+      this._pp(c, u, y + dy, d, _v);
+      if (city.solidAt(_v.x, _v.y, _v.z)) return false;
+    }
+    return true;
+  }
+  _rootFor(c, u, y, out = new THREE.Vector3()) { return this._pp(c, u, y, -CLIMB_OFF, out); }
+  _faceYaw(c) { return Math.atan2(-c.nx, -c.nz); }
+
+  _newClimb(nx, nz, wall, b) {
+    return { b, nx, nz, wall, phase: 0, moving: 0, vy: 0, vu: 0, vdir: 1, slip: 0, attachT: 0 };
+  }
+
+  // Y / C: grab the nearest wall (from the street, mid-air or a roof edge).
+  _tryClimb(opts = {}) {
+    if (this.reattachCd > 0) return false;
     const city = this.ctx.city;
     const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
     const fwd = this.forward;
     let best = null;
     for (const [dx, dz] of dirs) {
-      // probe a wall in this direction within reach at chest height
-      for (let d = GORILLA.radius; d <= GORILLA.radius + 5; d += 1) {
+      if (opts.wish && dx * opts.wish.x + dz * opts.wish.z < 0.4) continue;
+      for (let d = 1; d <= GORILLA.radius + 5; d += 0.5) {
         const px = this.pos.x + dx * d, pz = this.pos.z + dz * d;
-        const y = this.pos.y + 8;
-        const hit = city.cellQuery(px, y, pz);
+        let hit = null;
+        for (const hy of [7, 11, 3]) { hit = city.cellQuery(px, this.pos.y + hy, pz); if (hit) break; }
         if (hit) {
           const score = d - (fwd.x * dx + fwd.z * dz) * 3;
-          if (!best || score < best.score) best = { score, dx, dz, b: hit.b, d };
+          if (!best || score < best.score) best = { score, dx, dz, b: hit.b, px, pz };
           break;
         }
       }
     }
     if (!best) {
-      this.ctx.events.emit('hint', { text: 'Get closer to a building to climb' });
-      return;
+      if (!opts.auto && this.state === 'ground' && this.pos.y > 2 && this._tryDescend()) return true;
+      if (!opts.auto) this.ctx.events.emit('hint', { text: 'Get closer to a building to climb' });
+      return false;
     }
-    const b = best.b;
-    // wall plane
-    let wallCoord;
-    if (best.dx === 1) wallCoord = b.x0 + Math.floor((this.pos.x + best.d - b.x0) / CELL.size) * CELL.size;
-    else if (best.dx === -1) wallCoord = b.x0 + (Math.floor((this.pos.x - best.d - b.x0) / CELL.size) + 1) * CELL.size;
-    else if (best.dz === 1) wallCoord = b.z0 + Math.floor((this.pos.z + best.d - b.z0) / CELL.size) * CELL.size;
-    else wallCoord = b.z0 + (Math.floor((this.pos.z - best.d - b.z0) / CELL.size) + 1) * CELL.size;
-    this.climb = { b, nx: -best.dx, nz: -best.dz, wall: wallCoord, phase: 0, moving: 0 };
+    const b = best.b, S = CELL.size;
+    let wall;
+    if (best.dx === 1) wall = b.x0 + Math.floor((best.px - b.x0) / S) * S;
+    else if (best.dx === -1) wall = b.x0 + (Math.floor((best.px - b.x0) / S) + 1) * S;
+    else if (best.dz === 1) wall = b.z0 + Math.floor((best.pz - b.z0) / S) * S;
+    else wall = b.z0 + (Math.floor((best.pz - b.z0) / S) + 1) * S;
+    const c = this._newClimb(-best.dx, -best.dz, wall, b);
+    const u = c.nx !== 0 ? this.pos.z : this.pos.x;
+    let y = this.pos.y;
+    // find a height where there is something to hold
+    let ok = false;
+    for (const dy of [0, 2, -2, 4, -4, 6]) {
+      if (y + dy < -0.5) continue;
+      if (this._grip(c, u, y + dy) >= 3 && this._bodyFree(c, u, y + dy)) { y += dy; ok = true; break; }
+    }
+    if (!ok) { if (!opts.auto) this.ctx.events.emit('hint', { text: 'Nothing to hold on to there' }); return false; }
+    const to = this._rootFor(c, u, Math.max(0, y));
+    this._beginTrans('attach', to, this._faceYaw(c), 0.22, c);
     this.state = 'climb';
+    this.climb = c;
     this.vel.set(0, 0, 0);
-    this.action = null;
-    if (this.held) this._dropHeld();
+    this.grounded = false;
+    if (this.action && this.action.name !== 'hit') this.action = null;
+    if (this.held && this.held.heavy) this._dropHeld();
     this.ctx.events.emit('climbStart', { p: this.pos.clone() });
+    return true;
   }
 
-  _updateClimb(dt, input, fwdIn, strafe) {
-    const c = this.climb;
+  // Standing on a roof: Y climbs over the nearest edge and hangs on the facade below it.
+  _tryDescend() {
     const city = this.ctx.city;
-    const off = GORILLA.radius * 0.75;
-    // stick to the wall plane
-    if (c.nx !== 0) this.pos.x = c.wall + c.nx * off; else this.pos.z = c.wall + c.nz * off;
-    this.yaw = Math.atan2(-c.nx, -c.nz);
-    // sideways direction: right of facing
-    const rx = -c.nz, rz = c.nx; // facing (-nx,-nz); right = facing x up
-    const tx = -rx, tz = -rz;
-    const busy = this.action && this.action.name === 'climbPunch';
-    const vy = busy ? 0 : fwdIn * GORILLA.climbSpeed;
-    const vs = busy ? 0 : strafe * GORILLA.climbSpeed * 0.8;
-    const moving = Math.min(1, Math.abs(fwdIn) + Math.abs(strafe));
-    c.moving = damp(c.moving, moving, 8, dt);
-    c.phase += dt * moving * 0.9;
-    let ny = this.pos.y + vy * dt;
-    let nx = this.pos.x + tx * vs * dt, nz = this.pos.z + tz * vs * dt;
-    // probe the wall surface in front at hands / body height
-    const probe = (x, y, z) => city.solidAt(x - c.nx * (off + 1.5), y, z - c.nz * (off + 1.5));
-    const bodyHold = probe(nx, ny + 6, nz) || probe(nx, ny + 2, nz);
-    const handHold = probe(nx, ny + 12, nz);
-    if (!bodyHold && !probe(this.pos.x, this.pos.y + 6, this.pos.z)) {
-      // wall gone beneath us
-      this._leaveClimb(true);
-      return;
+    const top = this.pos.y;
+    const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    const fwd = this.forward;
+    let best = null;
+    for (const [dx, dz] of dirs) {
+      for (let d = 1; d <= 9; d += 0.5) {
+        const g = city.groundAt(this.pos.x + dx * d, this.pos.z + dz * d, top + 1);
+        if (g < top - 3) {
+          const score = d - (fwd.x * dx + fwd.z * dz) * 4;
+          if (!best || score < best.score) best = { score, dx, dz, d };
+          break;
+        }
+      }
     }
-    if (!probe(nx, ny + 6, nz) && !probe(nx, ny + 2, nz)) { nx = this.pos.x; nz = this.pos.z; }
-    if (!handHold && fwdIn > 0) {
-      // reached the top: mantle onto the roof if there is one
-      const roofX = nx - c.nx * (off + 4), roofZ = nz - c.nz * (off + 4);
-      const top = city.groundAt(roofX, roofZ, ny + 14);
-      if (top > ny + 2) {
-        this.pos.set(roofX, top, roofZ);
+    if (!best) return false;
+    const inner = city.cellQuery(this.pos.x + best.dx * (best.d - 0.75), top - 2, this.pos.z + best.dz * (best.d - 0.75));
+    if (!inner) return false;
+    const b = inner.b, S = CELL.size;
+    const lx = this.pos.x + best.dx * (best.d - 0.75), lz = this.pos.z + best.dz * (best.d - 0.75);
+    let wall;
+    if (best.dx === 1) wall = b.x0 + (Math.floor((lx - b.x0) / S) + 1) * S;
+    else if (best.dx === -1) wall = b.x0 + Math.floor((lx - b.x0) / S) * S;
+    else if (best.dz === 1) wall = b.z0 + (Math.floor((lz - b.z0) / S) + 1) * S;
+    else wall = b.z0 + Math.floor((lz - b.z0) / S) * S;
+    const c = this._newClimb(best.dx, best.dz, wall, b);
+    const u = c.nx !== 0 ? this.pos.z : this.pos.x;
+    const y = Math.max(city.groundAt(this.pos.x + best.dx * (best.d + 4), this.pos.z + best.dz * (best.d + 4), top), top - 15);
+    if (this._grip(c, u, y) < 3) return false;
+    this.state = 'climb';
+    this.climb = c;
+    this.vel.set(0, 0, 0);
+    this.action = null;
+    this._beginTrans('descend', this._rootFor(c, u, y), this._faceYaw(c), 0.75, c);
+    this.ctx.events.emit('climbStart', { p: this.pos.clone(), descend: true });
+    return true;
+  }
+
+  _beginTrans(kind, to, yaw1, dur, c) {
+    this.trans = { kind, from: this.pos.clone(), to: to.clone(), yaw0: this.yaw, yaw1, t: 0, dur, c };
+  }
+
+  _updateTrans(dt) {
+    const tr = this.trans;
+    tr.t += dt;
+    const k = Math.min(1, tr.t / tr.dur);
+    const e = k * k * (3 - 2 * k);
+    const f = tr.from, to = tr.to;
+    switch (tr.kind) {
+      case 'mantle': {
+        // haul up first, then roll forward onto the roof
+        const ky = Math.min(1, k * 1.6);
+        this.pos.set(f.x + (to.x - f.x) * Math.max(0, (k - 0.35) / 0.65), f.y + (to.y - f.y) * (1 - (1 - ky) * (1 - ky)) + Math.sin(k * Math.PI) * 1.2, f.z + (to.z - f.z) * Math.max(0, (k - 0.35) / 0.65));
+        break;
+      }
+      case 'descend': {
+        // step out over the edge, then swing down onto the facade
+        const kx = Math.min(1, k * 1.8);
+        const ky = Math.max(0, (k - 0.3) / 0.7);
+        this.pos.set(f.x + (to.x - f.x) * kx, f.y + (to.y - f.y) * ky * ky, f.z + (to.z - f.z) * kx);
+        break;
+      }
+      case 'corner': {
+        // swing around the corner on an arc
+        const mid = tr.mid;
+        const a = 1 - e;
+        this.pos.set(a * a * f.x + 2 * a * e * mid.x + e * e * to.x, f.y + (to.y - f.y) * e, a * a * f.z + 2 * a * e * mid.z + e * e * to.z);
+        break;
+      }
+      default:
+        this.pos.lerpVectors(f, to, e);
+    }
+    let dy = tr.yaw1 - tr.yaw0;
+    while (dy > Math.PI) dy -= Math.PI * 2;
+    while (dy < -Math.PI) dy += Math.PI * 2;
+    this.yaw = tr.yaw0 + dy * e;
+    if (k >= 1) {
+      this.trans = null;
+      this.yaw = tr.yaw1;
+      if (tr.kind === 'mantle') {
         this.state = 'ground';
         this.grounded = true;
         this.climb = null;
-        this.vel.set(-c.nx * 2, 0, -c.nz * 2);
-        this.landT = 0; this.landK = 0.4;
+        this.vel.set(0, 0, 0);
+        this.landT = 0; this.landK = 0.45;
         this.ctx.events.emit('mantle', { p: this.pos.clone() });
-        return;
+      } else if (tr.c) {
+        this.climb = tr.c;
       }
-      ny = this.pos.y;
     }
-    const ground = city.groundAt(nx, nz, ny + 1);
-    if (ny < ground) { ny = ground; if (fwdIn < 0) { this._leaveClimb(false); return; } }
-    this.pos.set(nx, ny, nz);
-    if (input.hit('jump')) {
-      this.state = 'air';
-      this.vel.set(c.nx * 14, 14, c.nz * 14);
-      this.yaw = Math.atan2(c.nx, c.nz);
-      this.climb = null;
-      this.ctx.events.emit('jump', { p: this.pos.clone() });
+  }
+
+  _updateClimb(dt, input) {
+    const c = this.climb;
+    c.attachT += dt;
+    if (this.trans) { this._updateTrans(dt); this.speed = 0; return; }
+    const city = this.ctx.city;
+    const rs = this._rightSign(c);
+    let up = input.move.y, side = input.move.x;
+    // keep "right on the stick" = right on screen, even with the camera swung around
+    const camRx = -Math.cos(this.camYaw), camRz = Math.sin(this.camYaw);
+    if (camRx * c.nz + camRz * -c.nx < -0.25) side = -side;
+    const busy = this.action && this.action.name !== 'hit';
+    const speed = GORILLA.climbSpeed * (input.down('sprint') ? 1.6 : 1) * (busy ? 0.12 : 1);
+    c.vy = damp(c.vy, up * speed, 10, dt);
+    c.vu = damp(c.vu, side * speed * 0.85, 10, dt);
+    const u = this._u(), y = this.pos.y;
+    let nu = u + c.vu * rs * dt;
+    let ny = y + c.vy * dt;
+
+    // ---- along the wall ----
+    if (Math.abs(c.vu) > 0.05) {
+      const dir = Math.sign(c.vu * rs);
+      if (!this._bodyFree(c, nu + dir * 2.5, ny)) {
+        if (Math.abs(side) > 0.5 && this._insideCorner(c, u, ny, dir)) return;
+        nu = u; c.vu = 0;
+      } else if (this._grip(c, nu + dir * 1.5, ny) < 3) {
+        if (Math.abs(side) > 0.5 && this._outsideCorner(c, u, ny, dir)) return;
+        nu = u; c.vu = 0;
+      }
     }
+    // ---- up / down ----
+    if (c.vy > 0.05 && !this._wallRow(c, nu, ny + 16.5)) {
+      // hands have run out of wall: a roof to haul onto?
+      this._pp(c, nu, 0, 4, _v2);
+      const top = city.groundAt(_v2.x, _v2.z, ny + 22);
+      if (top > ny + 3 && top < ny + 21) {
+        if (up > 0.3) { this._startMantle(c, nu, top); return; }
+        ny = y; c.vy = 0;
+      } else if (this._grip(c, nu, ny) < 4) { ny = y; c.vy = 0; }
+    }
+    if (c.vy < -0.05) {
+      const root = this._rootFor(c, nu, ny, _v2);
+      const ground = city.groundAt(root.x, root.z, y + 1);
+      if (ny <= ground) {
+        ny = ground;
+        c.vy = 0;
+        if (up < -0.5 && c.attachT > 0.4) { this._leaveClimb('ground'); return; }
+      }
+    }
+    if (!this._bodyFree(c, nu, ny)) { nu = u; ny = y; c.vu = 0; c.vy = 0; }
+    if (this._grip(c, nu, ny) === 0) { nu = u; ny = y; }
+    this._rootFor(c, nu, ny, this.pos);
+    this.yaw = dampAngle(this.yaw, this._faceYaw(c), 12, dt);
+
+    // ---- holding on: react to the wall being destroyed under the hands ----
+    const grip = this._grip(c, nu, this.pos.y);
+    if (grip === 0) { this._leaveClimb('lost'); return; }
+    if (grip < 3) {
+      c.slip += dt;
+      const g2 = city.groundAt(this.pos.x, this.pos.z, this.pos.y + 1);
+      this.pos.y = Math.max(g2, this.pos.y - 5 * dt);
+      if (c.slip > 0.05 && c.slip - dt <= 0.05) this.ctx.events.emit('slip', { p: this.pos.clone() });
+      if (c.slip > 1.6) { this._leaveClimb('lost'); return; }
+    } else c.slip = Math.max(0, c.slip - dt * 2);
+
+    const mv = Math.abs(c.vy) + Math.abs(c.vu);
+    c.moving = damp(c.moving, Math.min(1, mv / GORILLA.climbSpeed), 8, dt);
+    c.phase += (dt * mv) / 8;
+    if (Math.abs(c.vy) > 0.3) c.vdir = c.vy > 0 ? 1 : -1;
+    // hand-over-hand thumps on the facade
+    const step = Math.floor(c.phase * 2);
+    if (step !== c.lastStep) { c.lastStep = step; if (mv > 1) this.ctx.events.emit('climbStep', { p: this.chest }); }
     this.speed = 0;
   }
 
-  _leaveClimb(fall) {
+  _startMantle(c, u, top) {
+    this._pp(c, u, top, 4.2, _v2);
+    const to = new THREE.Vector3(_v2.x, top, _v2.z);
+    this._beginTrans('mantle', to, this._faceYaw(c), 0.6, null);
+    this.ctx.events.emit('mantleStart', { p: to.clone() });
+  }
+
+  _outsideCorner(c, u, y, dir) {
+    // the wall ends: find its edge along u, then try the face around the corner
+    let e = u;
+    for (let k = 0; k < 24 && this._wallRow(c, e + dir * 0.5, y + 8) && this._solidWall(c, e + dir * 0.5, y + 8); k++) e += dir * 0.5;
+    const S = CELL.size;
+    const edge = Math.round(e / S) * S; // facade edges sit on the cell grid
+    let nx, nz;
+    if (c.nx !== 0) { nx = 0; nz = dir; } else { nx = dir; nz = 0; }
+    const nc = this._newClimb(nx, nz, edge + (c.b ? 0 : 0), c.b);
+    // gridded relative to the building origin
+    const b = c.b;
+    if (b) {
+      if (nx !== 0) nc.wall = b.x0 + Math.round((edge - b.x0) / S) * S;
+      else nc.wall = b.z0 + Math.round((edge - b.z0) / S) * S;
+    }
+    const nu = c.wall - (c.nx !== 0 ? c.nx : c.nz) * 3; // 3 m around the corner, along the new face
+    if (this._grip(nc, nu, y) < 3 || !this._bodyFree(nc, nu, y)) return false;
+    const to = this._rootFor(nc, nu, y);
+    this._beginTrans('corner', to, this._faceYaw(nc), 0.45, nc);
+    const cp = c.nx !== 0 ? new THREE.Vector3(c.wall, y, nc.wall) : new THREE.Vector3(nc.wall, y, c.wall);
+    this.trans.mid = cp.add(new THREE.Vector3(c.nx + nx, 0, c.nz + nz).multiplyScalar(CLIMB_OFF * 1.3));
+    this.ctx.events.emit('climbCorner', { p: this.pos.clone() });
+    return true;
+  }
+
+  _insideCorner(c, u, y, dir) {
+    // a perpendicular wall blocks the way: turn onto it
+    let f = u;
+    for (let k = 0; k < 24 && this._bodyFree(c, f + dir * 0.5, y); k++) f += dir * 0.5;
+    const S = CELL.size;
+    const hit = this.ctx.city.cellQuery(...this._pp(c, f + dir * (CLIMB_OFF + 1), y + 8, -CLIMB_OFF * 0.5, new THREE.Vector3()).toArray());
+    const b = hit ? hit.b : c.b;
+    let nx, nz;
+    if (c.nx !== 0) { nx = 0; nz = -dir; } else { nx = -dir; nz = 0; }
+    const wallGuess = f + dir * (CLIMB_OFF + 0.5);
+    const wall = nx !== 0 ? b.x0 + Math.round((wallGuess - b.x0) / S) * S : b.z0 + Math.round((wallGuess - b.z0) / S) * S;
+    const nc = this._newClimb(nx, nz, wall, b);
+    const nu = c.wall + (c.nx !== 0 ? c.nx : c.nz) * CLIMB_OFF;
+    if (this._grip(nc, nu, y) < 3 || !this._bodyFree(nc, nu, y)) return false;
+    this._beginTrans('corner', this._rootFor(nc, nu, y), this._faceYaw(nc), 0.4, nc);
+    this.trans.mid = this.pos.clone().lerp(this.trans.to, 0.5).add(new THREE.Vector3(c.nx + nx, 0, c.nz + nz).multiplyScalar(0.8));
+    this.ctx.events.emit('climbCorner', { p: this.pos.clone() });
+    return true;
+  }
+
+  // Leave the wall. how: 'jump' | 'drop' | 'lost' | 'ground'
+  _leaveClimb(how = 'drop') {
     const c = this.climb;
-    this.state = 'air';
-    this.grounded = false;
-    if (c) this.vel.set(c.nx * 4, fall ? -2 : 0, c.nz * 4);
+    this.trans = null;
+    if (how === 'ground') {
+      this.state = 'ground';
+      this.grounded = true;
+      this.vel.set(c ? c.nx * 2 : 0, 0, c ? c.nz * 2 : 0);
+    } else {
+      this.state = 'air';
+      this.grounded = false;
+      if (c) this.vel.set(c.nx * (how === 'lost' ? 5 : 4), how === 'lost' ? -3 : 0, c.nz * (how === 'lost' ? 5 : 4));
+      this.reattachCd = how === 'lost' ? 0.7 : 0.45;
+    }
+    if (how === 'lost') this.ctx.events.emit('lostGrip', { p: this.pos.clone() });
+    if (this.action && this.action.name.startsWith('climb')) this.action = null;
     this.climb = null;
+  }
+
+  // A: leap off the wall, toward a helicopter if one is in view and in range.
+  _wallJump() {
+    const c = this.climb;
+    const chest = this.chest;
+    let target = null, best = 1e9;
+    const m = this.ctx.military;
+    if (m) {
+      const cf = this.ctx.cameraRig ? this.ctx.cameraRig.lookDir : new THREE.Vector3(c.nx, 0, c.nz);
+      for (const h of m.helis) {
+        if (h.state !== 'fly' || h.held) continue;
+        _v2.set(h.x - chest.x, h.y - chest.y, h.z - chest.z);
+        const d = _v2.length();
+        const outward = (_v2.x * c.nx + _v2.z * c.nz) / d;
+        if (d > 55 || outward < 0) continue;
+        const cos = _v2.dot(cf) / d;
+        // aimed at with the camera, or simply hovering close off the facade
+        if (cos < 0.55 && !(d < 36 && outward > 0.3)) continue;
+        const score = d - cos * 15;
+        if (score < best) { best = score; target = h; }
+      }
+    }
+    this._leaveClimb('jump');
+    if (target) {
+      // ballistic leap that peaks near the chopper
+      const lead = new THREE.Vector3(target.x + target.vx * 0.5, target.y - 6, target.z + target.vz * 0.5);
+      const dir = lead.sub(chest);
+      const flat = Math.hypot(dir.x, dir.z);
+      const T = Math.max(0.55, Math.min(1.3, flat / 30));
+      this.vel.set(dir.x / T, dir.y / T + 17 * T, dir.z / T);
+      this.yaw = Math.atan2(dir.x, dir.z);
+      this.leapTarget = target;
+    } else {
+      const cf = this.ctx.cameraRig ? this.ctx.cameraRig.lookDir : new THREE.Vector3();
+      this.vel.set(c.nx * 15 + cf.x * 5, 16, c.nz * 15 + cf.z * 5);
+      this.yaw = Math.atan2(c.nx, c.nz);
+      this.leapTarget = null;
+    }
+    this.ctx.events.emit('jump', { p: this.pos.clone(), wall: true });
+  }
+
+  // Where on the facade an attack lands (world space), at the monster's actual height.
+  _wallPoint(c, side, heightAboveRoot, depth = 1.5) {
+    const rs = this._rightSign(c);
+    const u = this._u() + side * 1.8 * rs;
+    return this._pp(c, u, this.pos.y + heightAboveRoot, depth, new THREE.Vector3());
   }
 
   // ---------------- combat ----------------
@@ -466,9 +776,58 @@ export class Gorilla {
         break;
       }
       case 'climbPunch': {
-        const hand = a.side === 'L' ? this.handL : this.handR;
-        const p = hand.clone().addScaledVector(fwd, 2.5);
-        ctx.combat.strike(p, a.heavy ? 6.5 : 5, (a.heavy ? 1.9 : 1.2) * rageK, fwd, a.heavy ? 'smash' : 'punch');
+        // the blow lands on the facade right where the monster hangs (not at street level)
+        const c = this.climb;
+        if (!c) break;
+        this.stats.punches++;
+        const into = new THREE.Vector3(-c.nx, 0, -c.nz);
+        const p = this._wallPoint(c, a.side === 'L' ? -1 : 1, 11.5 + a.aim * 5.5, 1.6);
+        const res = ctx.combat.strike(p, 4.6, 1.2 * rageK, into, 'punch');
+        if (!res.hitSomething) ctx.events.emit('whiff', { p });
+        ctx.events.emit('climbHit', { p, heavy: false, destroyed: res.destroyed });
+        break;
+      }
+      case 'climbSmash': {
+        const c = this.climb;
+        if (!c) break;
+        const into = new THREE.Vector3(-c.nx, -0.3, -c.nz).normalize();
+        const hi = this._wallPoint(c, 0.6, 9.5, 2.2), lo = this._wallPoint(c, 0.4, 4.5, 2.2);
+        const r1 = ctx.combat.strike(hi, 6.2, 2.0 * rageK, into, 'smash');
+        const r2 = ctx.combat.strike(lo, 5.6, 1.85 * rageK, into, 'smash');
+        ctx.fx.addShake(1.0);
+        ctx.events.emit('climbHit', { p: hi, heavy: true, destroyed: r1.destroyed + r2.destroyed });
+        break;
+      }
+      case 'climbKick': {
+        const c = this.climb;
+        if (!c) break;
+        const into = new THREE.Vector3(-c.nx, 0, -c.nz);
+        const p1 = this._wallPoint(c, 0, 2, 1.6), p2 = this._wallPoint(c, 0, -2.2, 1.6);
+        const r1 = ctx.combat.strike(p1, 5.4, 1.6 * rageK, into, 'smash');
+        const r2 = ctx.combat.strike(p2, 4.6, 1.2 * rageK, into, 'punch');
+        ctx.events.emit('climbHit', { p: p1, heavy: true, destroyed: r1.destroyed + r2.destroyed });
+        break;
+      }
+      case 'climbSwat': {
+        const h = a.target;
+        if (h && h.state === 'fly' && this.chest.distanceTo(new THREE.Vector3(h.x, h.y, h.z)) < 24) {
+          const dir = new THREE.Vector3(h.x - this.pos.x, 0, h.z - this.pos.z).normalize();
+          ctx.combat.strike(new THREE.Vector3(h.x, h.y, h.z), 3, 1.6 * rageK, dir, 'punch');
+        } else ctx.events.emit('whiff', { p: this.chest });
+        break;
+      }
+      case 'climbGrab': {
+        const g = a.cand ? a.cand.take() : null;
+        if (g) {
+          this.held = g;
+          g.attach(this);
+          ctx.events.emit('grab', { kind: g.kind, high: true });
+        } else ctx.events.emit('whiff', { p: this.chest });
+        break;
+      }
+      case 'climbRoar': {
+        this.rage = 9;
+        ctx.combat.roar(this.chest);
         break;
       }
       case 'smash': {
@@ -502,6 +861,7 @@ export class Gorilla {
         } else ctx.events.emit('whiff', { p: reach });
         break;
       }
+      case 'climbEat':
       case 'eat': {
         if (this.held && this.held.edible) {
           const heal = this.held.heal || 8;
@@ -513,6 +873,7 @@ export class Gorilla {
         }
         break;
       }
+      case 'climbThrow':
       case 'throw': {
         if (this.held) {
           const aim = this.assist ? new THREE.Vector3(this.assist.x, this.assist.y, this.assist.z) : ctx.cameraRig.aimPoint(220);
@@ -531,6 +892,57 @@ export class Gorilla {
         break;
       }
     }
+  }
+
+  // RT on the wall: punch the facade, or backhand a helicopter that is within reach.
+  _climbAttack() {
+    const c = this.climb;
+    const side = this.punchSide = this.punchSide === 'L' ? 'R' : 'L';
+    const chest = this.chest;
+    const m = this.ctx.military;
+    let heli = null, best = 1e9;
+    if (m) {
+      for (const h of m.helis) {
+        if (h.state !== 'fly' || h.held) continue;
+        const dx = h.x - chest.x, dy = h.y - chest.y, dz = h.z - chest.z;
+        const d = Math.hypot(dx, dy, dz);
+        // reachable: close, out in front of the facade (behind the monster's back)
+        if (d < 20 && dx * c.nx + dz * c.nz > -2 && d < best) { best = d; heli = h; }
+      }
+    }
+    if (heli) {
+      const rs = this._rightSign(c);
+      const lateral = (c.nx !== 0 ? heli.z - this.pos.z : heli.x - this.pos.x) * rs;
+      this._start('climbSwat', { side: lateral >= 0 ? 'R' : 'L', target: heli, aim: clamp((heli.y - chest.y) / 10, -1, 1) });
+    } else {
+      // aim up/down the wall with the camera pitch
+      this._start('climbPunch', { side, aim: clamp(this.aimPitch * 1.8 + 0.15, -1, 1) });
+    }
+  }
+
+  // X on the wall: reach into a window for a person (or snatch a hovering chopper).
+  _climbGrab() {
+    const c = this.climb;
+    const chest = this.chest;
+    const ctx = this.ctx;
+    const cands = [];
+    if (ctx.windows) cands.push(...ctx.windows.grabCandidates(this.pos, c, 12));
+    if (ctx.military) {
+      for (const g of ctx.military.grabCandidates(new THREE.Vector3(chest.x, this.pos.y + 4, chest.z), 9)) if (g.kind === 'heli' || g.kind === 'soldier') cands.push(g);
+    }
+    let best = null, bd = 1e9;
+    for (const g of cands) {
+      const d = g.pos.distanceTo(chest) - (g.edible ? 2 : 0);
+      if (d < bd && g.pos.distanceTo(chest) < 13) { bd = d; best = g; }
+    }
+    const rs = this._rightSign(c);
+    let sideK = 0.5, hK = 0;
+    if (best) {
+      const lat = (c.nx !== 0 ? best.pos.z - this.pos.z : best.pos.x - this.pos.x) * rs;
+      sideK = clamp(lat / 7, -1, 1);
+      hK = clamp((best.pos.y - (this.pos.y + 11)) / 6, -1, 1);
+    }
+    this._start('climbGrab', { cand: best, sideK, hK });
   }
 
   _dropHeld() {
@@ -564,8 +976,18 @@ export class Gorilla {
     if (this.state === 'dead') {
       Poses.death(this.out, this.deathT);
     } else if (this.state === 'climb') {
-      Poses.climb(base, this.climb ? this.climb.phase : 0, this.climb ? this.climb.moving : 0);
+      const c = this.climb || (this.trans && this.trans.c);
+      const tr = this.trans;
+      const k = tr ? Math.min(1, tr.t / tr.dur) : 0;
+      if (tr && tr.kind === 'mantle') Poses.mantle(base, k);
+      else if (tr && tr.kind === 'descend') Poses.mantle(base, 1 - k);
+      else Poses.climb(base, c ? c.phase + (tr ? k * 0.5 : 0) : 0, tr ? 1 : c ? c.moving : 0, c ? c.vdir : 1);
       this.out.copy(base);
+      if (this.held && !this.action) {
+        // carry the snack in the right hand, hold on with the left
+        Poses.climbEat(this.tmp, 0.12, base);
+        this.out.copy(this.tmp);
+      }
     } else {
       // locomotion blend
       const sp = this.speed;
@@ -629,7 +1051,14 @@ export class Gorilla {
         case 'grab': Poses.grab(this.act, t, this.out); break;
         case 'eat': Poses.eat(this.act, t, holdBase); break;
         case 'throw': Poses.throw(this.act, t, holdBase); break;
-        case 'climbPunch': Poses.climbPunch(this.act, t, a.side, this.out); break;
+        case 'climbPunch': Poses.climbPunch(this.act, t, a.side, this.out, a.aim || 0); break;
+        case 'climbSmash': Poses.climbSmash(this.act, t, this.out); break;
+        case 'climbKick': Poses.climbKick(this.act, t, this.out); break;
+        case 'climbGrab': Poses.climbGrab(this.act, t, this.out, a.sideK ?? 0.5, a.hK ?? 0); break;
+        case 'climbEat': Poses.climbEat(this.act, t, this.out); break;
+        case 'climbSwat': Poses.climbSwat(this.act, t, a.side, this.out, a.aim || 0); break;
+        case 'climbThrow': Poses.climbSwat(this.act, t, 'R', this.out, 0.3); break;
+        case 'climbRoar': Poses.climbRoar(this.act, t, this.out); break;
         case 'hit': Poses.hit(this.act, t, this.out); break;
       }
       const fadeIn = Math.min(1, a.t / 0.06), fadeOut = Math.min(1, (a.dur - a.t) / 0.12);
@@ -639,7 +1068,7 @@ export class Gorilla {
     }
     // look toward the camera's aim (alive, not in big actions)
     if (this.state !== 'dead') {
-      const want = clamp(angleDiff(this.yaw, this.camYaw), -0.9, 0.9);
+      const want = this.state === 'climb' ? 0 : clamp(angleDiff(this.yaw, this.camYaw), -0.9, 0.9);
       this.headYaw = damp(this.headYaw, want, 5, dt);
       this.out.add('neck', 0, this.headYaw * 0.4, 0);
       this.out.add('head', -this.aimPitch * 0.3, this.headYaw * 0.4, 0);

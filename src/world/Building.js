@@ -61,7 +61,7 @@ export class Building {
     this.collapsedOnce = false;
     this.occupants = def.occupants ?? 20;
     this.color = new THREE.Color(def.style.wallA);
-    this.concrete = new THREE.Color(0.36, 0.345, 0.33);
+    this.concrete = new THREE.Color(0.3, 0.285, 0.265);
 
     for (let z = 0; z < this.nz; z++) {
       for (let x = 0; x < this.nx; x++) {
@@ -189,7 +189,7 @@ export class Building {
       const d = this.dmg[i];
       if (d > 0.25) {
         // damaged cells sag and twist a little: breaks the clean grid look around holes
-        const h = this.info[i * 3 + 2];
+        const h = this.info[i * 3 + 2] % 1;
         const k = (d - 0.25) * 1.3;
         _e.set((h - 0.5) * 0.18 * k, (h * 7 % 1 - 0.5) * 0.12 * k, ((h * 13) % 1 - 0.5) * 0.18 * k);
         _q.setFromEuler(_e);

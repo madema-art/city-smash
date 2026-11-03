@@ -82,13 +82,16 @@ export class HumanRenderer {
         _m.multiplyMatrices(_b, _t);
         P.helmet.setMatrixAt(n, _m);
       }
+      if (h.bust) { P.legL.setMatrixAt(n, ZERO); P.legR.setMatrixAt(n, ZERO); }
       if (far) {
         P.legL.setMatrixAt(n, ZERO); P.legR.setMatrixAt(n, ZERO);
         P.armL.setMatrixAt(n, ZERO); P.armR.setMatrixAt(n, ZERO);
         if (this.soldier) P.gun.setMatrixAt(n, ZERO);
       } else {
-        this._limb(P.legL, n, 0.14, 0.95, 0, legA, 0);
-        this._limb(P.legR, n, -0.14, 0.95, 0, -legA, 0);
+        if (!h.bust) {
+          this._limb(P.legL, n, 0.14, 0.95, 0, legA, 0);
+          this._limb(P.legR, n, -0.14, 0.95, 0, -legA, 0);
+        }
         if (h.anim === 'aim' || h.anim === 'fireaim') {
           this._limb(P.armL, n, 0.36, 1.66, 0.05, -1.5, -0.5);
           this._limb(P.armR, n, -0.36, 1.66, 0.05, -1.45, 0.25);

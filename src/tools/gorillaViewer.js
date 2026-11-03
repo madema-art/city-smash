@@ -59,9 +59,22 @@ export function runGorillaViewer(params) {
       case 'eat': Poses.eat(p, t, Poses.hold(new Pose(), base)); break;
       case 'throw': Poses.throw(p, t, Poses.hold(new Pose(), base)); break;
       case 'climb': Poses.climb(p, t, 1); break;
+      case 'chold': Poses.climb(p, 0, 0); break;
+      case 'cpunch': Poses.climbPunch(p, t, 'R', Poses.climb(new Pose(), 0, 0), 0); break;
+      case 'csmash': Poses.climbSmash(p, t, Poses.climb(new Pose(), 0, 0)); break;
+      case 'ckick': Poses.climbKick(p, t, Poses.climb(new Pose(), 0, 0)); break;
+      case 'cgrab': Poses.climbGrab(p, t, Poses.climb(new Pose(), 0, 0), 0.6, 0); break;
+      case 'ceat': Poses.climbEat(p, t, Poses.climb(new Pose(), 0, 0)); break;
+      case 'cswat': Poses.climbSwat(p, t, 'R', Poses.climb(new Pose(), 0, 0), 0.3); break;
+      case 'mantle': Poses.mantle(p, t); break;
       case 'death': Poses.death(p, t); break;
     }
     applyPose(g.bones, p, g.rest);
+    if (/^(c[a-z]+|climb|mantle)$/.test(name) && params.get('wall')) {
+      const wall = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 2.6), new THREE.MeshStandardMaterial({ color: 0x8899aa, transparent: true, opacity: 0.35, side: THREE.DoubleSide }));
+      wall.position.set(0, 1.2, 3.2 / 9.2);
+      g.group.add(wall);
+    }
     items.push(g);
   });
   const zoom = parseFloat(params.get('zoom') || '1');

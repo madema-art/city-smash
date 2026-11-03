@@ -17,7 +17,7 @@ export class Combat {
     // enemies / vehicles / people near the fist
     const hits = ctx.military ? ctx.military.hit(p, radius + 2.5, dir, amount * k, kind) : 0;
     const cars = ctx.traffic ? ctx.traffic.hit(p, radius + 1.5, dir, amount * k) : 0;
-    const people = ctx.crowd ? ctx.crowd.hit(p, radius + 1, dir, amount * k) : 0;
+    const people = (ctx.crowd ? ctx.crowd.hit(p, radius + 1, dir, amount * k) : 0) + (ctx.windows ? ctx.windows.hit(p, radius + 2, dir, amount * k) : 0);
     ctx.props.impulse(p.x, p.z, p.y < 10 ? radius + 1 : 0, 10 * k);
     hitSomething = hitSomething || hits + cars + people > 0;
     if (hitSomething) {
@@ -67,6 +67,8 @@ export class Combat {
     if (ctx.crowd) cands.push(...ctx.crowd.grabCandidates(reach, 10));
     if (ctx.military) cands.push(...ctx.military.grabCandidates(reach, 10));
     if (ctx.traffic) cands.push(...ctx.traffic.grabCandidates(reach, 10));
+    // low windows are reachable from the street
+    if (ctx.windows) cands.push(...ctx.windows.grabCandidates(from, null, 13));
     if (!cands.length) return null;
     // prefer things in front, then close; people first since they heal
     let best = null, bestScore = 1e9;

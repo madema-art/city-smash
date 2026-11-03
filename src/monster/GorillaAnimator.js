@@ -82,6 +82,40 @@ function stance(p, lean, crouch = 0) {
   return p;
 }
 
+
+// Climbing body: torso leaned into the wall, head tilted back to look up/out.
+function climbTorso(p) {
+  p.clear();
+  p.set('hips', 0.32, 0, 0);
+  p.set('spine', 0.12, 0, 0);
+  p.set('chest', 0.05, 0, 0);
+  p.set('neck', -0.55, 0, 0);
+  p.set('head', -0.25, 0, 0);
+  p.hips[1] = -0.02;
+  p.hips[2] = 0.05;
+  return p;
+}
+// Solved limb configurations (left side; right mirrored by Pose.side).
+const ARM_PULL = [-1.221, 0.348, 1.696, -1.906];
+const ARM_REACH = [-2.699, -0.144, -0.112, -1.46];
+const LEG_LOW = [-0.713, 0.186, -0.046, -0.3];
+const LEG_HIGH = [-2.047, 0.501, 1.452, -0.4];
+function armOnWall(p, s, k) {
+  const a = ARM_PULL, b = ARM_REACH;
+  const L = (i) => a[i] + (b[i] - a[i]) * k;
+  p.side('upperArm', s, L(0), L(1), L(2));
+  p.side('forearm', s, L(3), 0, 0);
+  p.side('hand', s, -0.5 * k, 0, 0);
+  p.side('clav', s, 0, 0, 0.15 * k);
+}
+function legOnWall(p, s, k) {
+  const a = LEG_LOW, b = LEG_HIGH;
+  const L = (i) => a[i] + (b[i] - a[i]) * k;
+  p.side('thigh', s, L(0), 0, L(1));
+  p.side('shin', s, L(2), 0, 0);
+  p.side('foot', s, L(3), 0, 0);
+}
+
 export const Poses = {
   idle(p, t) {
     stance(p.clear(), 0.62, 0.15);
@@ -314,38 +348,168 @@ export const Poses = {
     return p;
   },
 
-  // Clinging to a wall (facing it). phase drives alternating reaches.
-  climb(p, phase, moving) {
-    p.clear();
+  // ---------------- climbing ----------------
+  // Hand/foot targets on a wall plane 3.2 m in front of the root were solved numerically
+  // (tools/_solve.mjs): REACH = hand high on the wall, PULL = hand at shoulder height, elbow out.
+  // The cycle alternates diagonal pairs, like a real climbing ape.
+  climb(p, phase, moving, vdir = 1) {
+    climbTorso(p);
     const a = phase * PI * 2;
-    const s = sin(a) * moving, c = cos(a) * moving;
-    p.set('hips', 0.05, 0, 0);
-    p.set('spine', 0.05, 0, 0);
-    p.set('neck', -0.35, 0, 0);
-    p.set('head', -0.2, s * 0.15, 0);
-    p.side('upperArm', 'L', -2.4 - s * 0.45, 0, 0.35);
-    p.side('upperArm', 'R', -2.4 + s * 0.45, 0, 0.35);
-    p.side('forearm', 'L', -0.5 - Math.max(0, c) * 0.6, 0, 0);
-    p.side('forearm', 'R', -0.5 - Math.max(0, -c) * 0.6, 0, 0);
-    p.side('hand', 'L', -0.3, 0, 0);
-    p.side('hand', 'R', -0.3, 0, 0);
-    p.side('thigh', 'L', -1.0 + s * 0.4, 0, 0.35);
-    p.side('thigh', 'R', -1.0 - s * 0.4, 0, 0.35);
-    p.side('shin', 'L', 1.3 - s * 0.3, 0, 0);
-    p.side('shin', 'R', 1.3 + s * 0.3, 0, 0);
-    p.sym('foot', -0.4, 0, 0);
-    p.hips[2] = -0.06;
+    // idle grip: one hand high, one at shoulder height (asymmetric reads as "holding on")
+    const s = moving > 0.01 ? Math.sin(a) : 0.35;
+    const kL = clamp01(0.5 + 0.5 * s * Math.max(moving, 0.6) * vdir);
+    const kR = clamp01(0.5 - 0.5 * s * Math.max(moving, 0.6) * vdir);
+    armOnWall(p, 'L', kL);
+    armOnWall(p, 'R', kR);
+    legOnWall(p, 'L', 1 - kR); // diagonal: left foot moves with right hand
+    legOnWall(p, 'R', 1 - kL);
+    // body heave as limbs pull
+    p.add('chest', 0, Math.sin(a) * 0.08 * moving, 0);
+    p.add('hips', 0, -Math.sin(a) * 0.06 * moving, Math.sin(a) * 0.04 * moving);
+    p.hips[1] += Math.abs(Math.cos(a)) * 0.015 * moving;
+    p.add('head', 0, Math.sin(a * 0.5) * 0.1, 0);
     return p;
   },
 
-  // Punch while clinging: free arm swings into the wall.
-  climbPunch(p, t, s, base) {
+  // Free arm drives into the facade. aim -1 (low) .. +1 (high) shifts the blow up/down the wall.
+  climbPunch(p, t, s, base, aim = 0) {
     p.copy(base);
-    const wind = ease(seg(t, 0, 0.3)), strike = ease(seg(t, 0.3, 0.45)), rec = ease(seg(t, 0.6, 1));
+    const wind = ease(seg(t, 0, 0.32)), strike = ease(seg(t, 0.32, 0.44)), rec = ease(seg(t, 0.62, 1));
     const k = 1 - rec;
-    p.side('upperArm', s, (-0.6 + 0.4 * wind - 1.3 * strike) * k + base.r[BI['upperArm' + s] * 3] * (1 - k), 0, (0.9 * wind - 0.5 * strike) * k + 0.3);
-    p.side('forearm', s, (-1.5 * wind + 1.4 * strike) * k - 0.2, 0, 0);
-    p.add('chest', 0, (s === 'L' ? 1 : -1) * (0.3 * wind - 0.5 * strike) * k, 0);
+    const sg = s === 'L' ? 1 : -1;
+    const o = s === 'L' ? 'R' : 'L';
+    // cocked: elbow back and up, fist by the ear
+    const cx = -2.2, cz = 1.1, cf = -2.0;
+    // impact: arm driven forward at the chosen height, fist through the wall surface
+    const ix = -1.55 - aim * 0.7, iz = 0.25, iF = -0.35;
+    const cur = BI['upperArm' + s] * 3, curF = BI['forearm' + s] * 3;
+    const bx = base.r[cur], bz = Math.abs(base.r[cur + 2]), bF = base.r[curF];
+    const ux = bx + (cx - bx) * wind + (ix - cx) * strike;
+    const uz = bz + (cz - bz) * wind + (iz - cz) * strike;
+    const uf = bF + (cf - bF) * wind + (iF - cf) * strike;
+    p.side('upperArm', s, bx + (ux - bx) * k, 0, bz + (uz - bz) * k);
+    p.side('forearm', s, bF + (uf - bF) * k, 0, 0);
+    // shoulders swing into it, the gripping arm braces high
+    p.add('chest', 0, sg * (0.35 * wind - 0.6 * strike) * k, 0);
+    p.add('spine', -0.12 * wind * k + 0.1 * strike * k, sg * (0.15 * wind - 0.25 * strike) * k, 0);
+    armOnWall(p, o, 1);
+    p.add('jaw', 0.3 * strike * k, 0, 0);
+    return p;
+  },
+
+  // Heavy structural smash: one hand grips, the other hammers down through a floor.
+  climbSmash(p, t, base) {
+    p.copy(base);
+    const up = ease(seg(t, 0, 0.42)), down = ease(seg(t, 0.42, 0.56)), rec = ease(seg(t, 0.7, 1));
+    const k = 1 - rec;
+    armOnWall(p, 'L', 1);
+    const ux = -3.0 * up + 1.7 * down, fx = -1.6 * up + 1.3 * down;
+    p.side('upperArm', 'R', base.r[BI.upperArmR * 3] * (1 - k) + ux * k - 0.3 * k, 0, 0.5 * k + 0.2);
+    p.side('forearm', 'R', fx * k - 0.25, 0, 0);
+    p.add('hips', (-0.25 * up + 0.35 * down) * k, 0, 0);
+    p.add('spine', (-0.2 * up + 0.3 * down) * k, -0.25 * up * k, 0);
+    p.add('chest', (-0.15 * up + 0.25 * down) * k, -0.3 * up * k + 0.2 * down * k, 0);
+    p.add('neck', (0.3 * up - 0.3 * down) * k, 0, 0);
+    p.add('jaw', 0.45 * up * k, 0, 0);
+    return p;
+  },
+
+  // Both feet piston into the wall below (smashes the floor under the monster).
+  climbKick(p, t, base) {
+    p.copy(base);
+    const pull = ease(seg(t, 0, 0.35)), kick = ease(seg(t, 0.35, 0.47)), rec = ease(seg(t, 0.62, 1));
+    const k = 1 - rec;
+    armOnWall(p, 'L', 1); armOnWall(p, 'R', 1);
+    const th = -2.2 * pull + 1.5 * kick, sh = 2.0 * pull - 1.9 * kick;
+    for (const sd of ['L', 'R']) {
+      const i = BI['thigh' + sd] * 3, j = BI['shin' + sd] * 3;
+      p.side('thigh', sd, base.r[i] * (1 - k) + th * k, 0, 0.3);
+      p.side('shin', sd, base.r[j] * (1 - k) + Math.max(0, sh) * k, 0, 0);
+    }
+    p.add('hips', -0.3 * pull * k + 0.25 * kick * k, 0, 0);
+    p.hips[1] += 0.03 * pull * k;
+    return p;
+  },
+
+  // Reach the free (right) hand into a window / toward something beside the monster.
+  // side: -1 left .. +1 right (in the monster's frame), h: -1 low .. +1 high
+  climbGrab(p, t, base, side = 0.5, h = 0) {
+    p.copy(base);
+    const reach = ease(seg(t, 0, 0.42)), back = ease(seg(t, 0.55, 1));
+    const k = reach * (1 - back);
+    armOnWall(p, 'L', 1);
+    const ux = -1.5 - h * 0.6, uz = 0.4 + Math.max(0, -side) * 0.2, uy = side * 0.6;
+    p.side('upperArm', 'R', base.r[BI.upperArmR * 3] * (1 - k) + ux * k, -uy * k, 0.35 * (1 - k) + uz * k);
+    p.side('forearm', 'R', -0.2 * k - 1.3 * back, -0.4 * back, 0);
+    p.add('chest', 0, -side * 0.35 * k, 0);
+    p.add('neck', 0, -side * 0.3 * k, 0);
+    p.add('jaw', 0.25 * k, 0, 0);
+    return p;
+  },
+
+  // Hold a snack to the mouth with one hand while the other grips.
+  climbEat(p, t, base) {
+    p.copy(base);
+    const up = ease(seg(t, 0, 0.28)), rec = ease(seg(t, 0.85, 1));
+    const k = up * (1 - rec);
+    armOnWall(p, 'L', 1);
+    p.side('upperArm', 'R', -0.9 * k + base.r[BI.upperArmR * 3] * (1 - k), -0.3 * k, 0.9 * k + 0.3 * (1 - k));
+    p.side('forearm', 'R', -2.3 * k, -0.6 * k, 0);
+    p.add('neck', 0.15 * k, 0.25 * k, 0);
+    p.add('head', 0.15 * k, 0.2 * k, 0);
+    const chew = seg(t, 0.28, 0.85);
+    p.set('jaw', 0.5 * up * (1 - seg(t, 0.26, 0.34)) + Math.max(0, Math.sin(chew * PI * 6)) * 0.22 * (1 - rec), 0, 0);
+    return p;
+  },
+
+  // Twist off the wall and backhand something flying behind the monster (helicopters).
+  climbSwat(p, t, s, base, aim = 0) {
+    p.copy(base);
+    const wind = ease(seg(t, 0, 0.3)), strike = ease(seg(t, 0.3, 0.46)), rec = ease(seg(t, 0.62, 1));
+    const k = 1 - rec;
+    const sg = s === 'L' ? 1 : -1;
+    const o = s === 'L' ? 'R' : 'L';
+    armOnWall(p, o, 1);
+    // body rotates out from the wall toward the target side
+    p.add('spine', -0.15 * k, sg * (0.6 * wind + 0.5 * strike) * k, 0);
+    p.add('chest', -0.1 * k, sg * (0.5 * wind + 0.4 * strike) * k, 0);
+    p.add('neck', -0.2 * k, sg * 0.4 * k, 0);
+    p.add('hips', 0, sg * 0.25 * k, 0);
+    const ux = -1.2 - aim * 0.9;
+    p.side('upperArm', s, (-2.0 * wind + (ux + 2.0) * strike) * k + base.r[BI['upperArm' + s] * 3] * (1 - k), 0, (1.4 * wind + 0.2 * strike) * k + 0.3);
+    p.side('forearm', s, (-1.6 * wind + 1.5 * strike) * k - 0.1, 0, 0);
+    p.add('jaw', 0.4 * strike * k, 0, 0);
+    return p;
+  },
+
+  // Roar from the side of a tower: one arm grips, the other beats the chest.
+  climbRoar(p, t, base) {
+    p.copy(base);
+    const rise = ease(seg(t, 0, 0.15)), rec = ease(seg(t, 0.85, 1));
+    const k = rise * (1 - rec);
+    armOnWall(p, 'L', 1);
+    const b = Math.max(0, Math.sin(seg(t, 0.2, 0.8) * PI * 10)) * k;
+    p.side('upperArm', 'R', 0.3 * k + base.r[BI.upperArmR * 3] * (1 - k) - 0.25 * b, -1.3 * k + 0.35 * b, 0.6 * k + 0.3 * (1 - k) + 0.25 * b);
+    p.side('forearm', 'R', -2.2 * k + 0.35 * b, 0, 0);
+    p.add('neck', -0.45 * k, -0.4 * k, 0);
+    p.add('head', -0.35 * k, -0.2 * k, 0);
+    p.add('spine', -0.15 * k, -0.3 * k, 0);
+    p.set('jaw', 0.6 * ease(seg(t, 0.1, 0.22)) * (1 - ease(seg(t, 0.75, 0.9))), 0, 0);
+    return p;
+  },
+
+  // Hauling over a roof edge: k 0 (hanging) .. 1 (crouched on the roof).
+  mantle(p, k) {
+    climbTorso(p);
+    armOnWall(p, 'L', 1); armOnWall(p, 'R', 1);
+    legOnWall(p, 'L', 0.5); legOnWall(p, 'R', 0.5);
+    const top = new Pose();
+    stance(top, 0.9, 0.5);
+    top.sym('upperArm', -0.7, 0, 0.3);
+    top.sym('forearm', -0.1, 0, 0);
+    top.sym('thigh', -1.7, 0, 0.15);
+    top.sym('shin', 1.7, 0, 0);
+    p.lerp(top, ease(k));
     return p;
   },
 

@@ -106,6 +106,7 @@ export class Military {
     this.tracers = new THREE.InstancedMesh(tg, tm, 400);
     this.tracers.count = 0;
     this.tracers.frustumCulled = false;
+    this.tracers.userData.noAO = true;
     this.tracers.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     ctx.root.add(this.tracers);
   }
@@ -251,7 +252,7 @@ export class Military {
     const h = {
       group, rotor, tail, light, hp: 1, x: g.pos.x + Math.cos(a) * 220, y: 70, z: g.pos.z + Math.sin(a) * 220,
       vx: 0, vy: 0, vz: 0, yaw: 0, roll: 0, pitch: 0, orbitA: a, orbitR: 55 + Math.random() * 20, dir: Math.random() < 0.5 ? 1 : -1,
-      fireCd: 3, burst: 0, burstCd: 0, rocketCd: 6 + Math.random() * 4, state: 'fly', swoop: 0, swoopCd: 8 + Math.random() * 6, t: 0, held: false,
+      fireCd: 3, burst: 0, burstCd: 0, rocketCd: 6 + Math.random() * 4, state: 'fly', swoop: 0, swoopCd: 8 + Math.random() * 6, t: 0, held: false, band: Math.random(),
     };
     this.helis.push(h);
     this.ctx.events.emit('heliSpawn', { h });
@@ -504,7 +505,7 @@ export class Military {
       t.flash = Math.max(0, t.flash - dt * 4);
       t.barrelPivot.position.z = 1.4 - t.flash * 0.6;
       t.fireCd -= dt;
-      if (t.fireCd <= 0 && d < 140 && g.alive && Math.abs(angleDiff(t.turretYaw, aimYaw)) < 0.12) {
+      if (t.fireCd <= 0 && d < 140 && g.alive && elev < 0.62 && Math.abs(angleDiff(t.turretYaw, aimYaw)) < 0.12) {
         t.fireCd = 5 + Math.random() * 3;
         t.flash = 1;
         const muzzle = new THREE.Vector3(0, 0, 5.4).applyEuler(new THREE.Euler(t.barrelPivot.rotation.x, 0, 0)).add(new THREE.Vector3(0, 0.5, 1.4));
@@ -594,32 +595,51 @@ export class Military {
         continue;
       }
       // ----- flying -----
+      // Elevation-aware engagement: when the monster is up on a skyscraper, choppers come to his
+      // altitude and work the open air in front of the facade he is on (and make swooping passes
+      // within swatting range). They steer *around* towers instead of popping over them.
+      const elevated = g.state === 'climb' || g.pos.y > 12;
+      const c = g.climb;
       h.swoopCd -= dt;
-      if (h.swoopCd <= 0 && h.swoop <= 0) { h.swoop = 4; h.swoopCd = 12 + Math.random() * 8; }
+      if (h.swoopCd <= 0 && h.swoop <= 0) { h.swoop = elevated ? 3.2 : 4; h.swoopCd = (elevated ? 6 : 12) + Math.random() * (elevated ? 5 : 8); }
       h.swoop -= dt;
-      const radius = h.swoop > 0 ? 15 : h.orbitR;
+      const radius = h.swoop > 0 ? (elevated ? 13 : 15) : elevated ? Math.min(h.orbitR, 34 + h.band * 14) : h.orbitR;
       h.orbitA += (h.dir * dt * (h.swoop > 0 ? 18 : 12)) / radius;
-      const tx = g.pos.x + Math.cos(h.orbitA) * radius;
-      const tz = g.pos.z + Math.sin(h.orbitA) * radius;
-      // keep above the rooftops directly beneath (now) and along the path (target)
-      const roofUnder = (x, z, r) => {
-        let f = 0;
-        for (const b of ctx.city.buildingsNear(x, z, r)) {
-          const cx = Math.min(Math.max(x, b.x0), b.x0 + b.width - 0.1), cz = Math.min(Math.max(z, b.z0), b.z0 + b.depth - 0.1);
-          f = Math.max(f, b.columnTopAt(cx, cz));
-        }
-        return f;
-      };
-      const floorNow = roofUnder(h.x, h.z, 7);
-      const floor = Math.max(floorNow, roofUnder(tx, tz, 7));
-      const ty = Math.max(g.pos.y + (h.swoop > 0 ? 17 : 28), floor + 10);
-      const ax = (tx - h.x) * 1.2 - h.vx * 1.4;
-      const ay = (ty - h.y) * 1.6 - h.vy * 1.8;
-      const az = (tz - h.z) * 1.2 - h.vz * 1.4;
-      h.vx += clamp(ax, -22, 22) * dt; h.vy += clamp(ay, -16, 16) * dt; h.vz += clamp(az, -22, 22) * dt;
-      // about to clip a roof: climb hard rather than teleport
-      if (h.y < floorNow + 5) h.vy = Math.max(h.vy, 14);
+      let ox = Math.cos(h.orbitA), oz = Math.sin(h.orbitA);
+      if (c && g.state === 'climb') {
+        // stay on the open side of the wall: reflect orbit points that fall behind it
+        const dn = ox * c.nx + oz * c.nz;
+        if (dn < 0.25) { ox -= c.nx * (dn - 0.25) * 2; oz -= c.nz * (dn - 0.25) * 2; const l = Math.hypot(ox, oz); ox /= l; oz /= l; }
+      }
+      const tx = g.pos.x + ox * radius;
+      const tz = g.pos.z + oz * radius;
+      // altitude: the monster's level (each chopper holds its own band), higher over open street
+      const chestY = g.pos.y + 10;
+      let ty;
+      if (elevated) ty = chestY + (h.swoop > 0 ? 1 + h.band * 3 : -4 + h.band * 16);
+      else ty = g.pos.y + (h.swoop > 0 ? 17 : 26 + h.band * 10);
+      ty = Math.max(ty, 14);
+      let ax = (tx - h.x) * 1.2 - h.vx * 1.4;
+      let ay = (ty - h.y) * 1.6 - h.vy * 1.8;
+      let az = (tz - h.z) * 1.2 - h.vz * 1.4;
+      // building avoidance: push sideways out of any tower volume we are near and below the top of
+      for (const bd of ctx.city.buildingsNear(h.x, h.z, 12)) {
+        const top = bd.columnTopAt(Math.min(Math.max(h.x, bd.x0 + 0.1), bd.x0 + bd.width - 0.1), Math.min(Math.max(h.z, bd.z0 + 0.1), bd.z0 + bd.depth - 0.1));
+        if (h.y > top + 4) continue;
+        const cx = Math.min(Math.max(h.x, bd.x0), bd.x0 + bd.width), cz = Math.min(Math.max(h.z, bd.z0), bd.z0 + bd.depth);
+        let px = h.x - cx, pz = h.z - cz;
+        let dl = Math.hypot(px, pz);
+        if (dl < 0.01) { px = h.x - bd.cx; pz = h.z - bd.cz; dl = Math.hypot(px, pz) || 1; }
+        const k = Math.max(0, 1 - dl / 12);
+        ax += (px / dl) * 60 * k; az += (pz / dl) * 60 * k;
+        // kill velocity into the wall
+        const vn = (h.vx * px + h.vz * pz) / dl;
+        if (vn < 0 && dl < 7) { h.vx -= (px / dl) * vn; h.vz -= (pz / dl) * vn; }
+      }
+      h.vx += clamp(ax, -26, 26) * dt; h.vy += clamp(ay, -16, 16) * dt; h.vz += clamp(az, -26, 26) * dt;
       h.x += h.vx * dt; h.y += h.vy * dt; h.z += h.vz * dt;
+      // last resort: never end a frame inside a building
+      if (ctx.city.solidAt(h.x, h.y, h.z)) { h.x -= h.vx * dt * 2; h.z -= h.vz * dt * 2; h.vx *= -0.3; h.vz *= -0.3; }
       // face the monster, bank with lateral acceleration
       const faceYaw = Math.atan2(g.pos.x - h.x, g.pos.z - h.z);
       h.yaw = dampAngle(h.yaw, faceYaw, 2.5, dt);

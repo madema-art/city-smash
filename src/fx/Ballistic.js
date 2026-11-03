@@ -18,6 +18,7 @@ export class BallisticPieces {
     this.mesh.frustumCulled = false;
     this.mesh.castShadow = castShadow;
     this.mesh.receiveShadow = false;
+    this.mesh.userData.noAO = true;
     this.mesh.setColorAt(0, _c.set(1, 1, 1));
     scene.add(this.mesh);
     this.n = 0;

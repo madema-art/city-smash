@@ -37,9 +37,9 @@ for (const k of Object.keys(JOINTS)) {
 export const BONE_NAMES = Object.keys(JOINTS);
 
 const COLORS = {
-  fur: new THREE.Color(0x1d1a19),
-  furBrown: new THREE.Color(0x2b221d),
-  skin: new THREE.Color(0x2f2d31),
+  fur: new THREE.Color(0x141110),
+  furBrown: new THREE.Color(0x2c1d14),
+  skin: new THREE.Color(0x26232a),
   crest: new THREE.Color(0x3b291f),
   silver: new THREE.Color(0x5c5c60),
   lip: new THREE.Color(0x1e1a1c),
@@ -309,7 +309,7 @@ export function gorillaMaterial({ shell = false } = {}) {
         // hair strands: stretched noise along Y in rest space
         float strands = fn(vec3(vRest.x * 260.0, vRest.y * 60.0, vRest.z * 260.0));
         float clump = fn(vRest * 45.0);
-        diffuseColor.rgb *= mix(1.0, 0.7 + 0.6 * strands * (0.6 + 0.4 * clump), vFur);
+        diffuseColor.rgb *= mix(1.0, 0.55 + 0.9 * strands * (0.55 + 0.45 * clump), vFur);
         // wrinkled leathery skin
         float wr = fn(vRest * vec3(120.0, 380.0, 120.0));
         diffuseColor.rgb *= mix(0.85 + 0.25 * wr, 1.0, vFur);`)
@@ -321,14 +321,18 @@ export function gorillaMaterial({ shell = false } = {}) {
           vec3 g = vec3(fn(vRest * 220.0 + 1.3), fn(vRest * 220.0 + 5.1), fn(vRest * 220.0 + 9.7)) - 0.5;
           normal = normalize(normal + g * (0.55 * vFur + 0.18 * (1.0 - vFur)));
         }`)
+      .replace('#include <lights_fragment_maps>', `#include <lights_fragment_maps>
+        // fur scatters the sky softly instead of mirroring it; skin keeps a leathery sheen
+        radiance *= mix(0.7, 0.18, vFur);
+        iblIrradiance *= 0.85;`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
         {
           // soft rim sheen: fur catches light at grazing angles
-          float rim = pow(1.0 - clamp(abs(dot(normalize(vVN), vec3(0.0, 0.0, 1.0))), 0.0, 1.0), 3.0);
-          totalEmissiveRadiance += diffuseColor.rgb * rim * 0.9 * vFur + vec3(0.03, 0.032, 0.036) * rim * vFur;
+          float rim = pow(1.0 - clamp(abs(dot(normalize(vVN), vec3(0.0, 0.0, 1.0))), 0.0, 1.0), 3.5);
+          totalEmissiveRadiance += (diffuseColor.rgb * 0.35 + vec3(0.016, 0.013, 0.01)) * rim * vFur;
         }`);
   };
-  mat.customProgramCacheKey = () => 'gorilla-skin-v1' + (shell ? '-shell' : '');
+  mat.customProgramCacheKey = () => 'gorilla-skin-v2' + (shell ? '-shell' : '');
   return mat;
 }
 

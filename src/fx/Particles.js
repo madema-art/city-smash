@@ -116,6 +116,7 @@ export class ParticleSystem {
     this.mesh = new THREE.Mesh(geo, mat);
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = additive ? 11 : 10;
+    this.mesh.userData.noAO = true;
     this.geo = geo;
     scene.add(this.mesh);
     this.additive = additive;
