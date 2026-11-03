@@ -600,7 +600,21 @@ export class Gorilla {
       }
     }
     // ---- up / down ----
-    if (c.vy > 0.05 && !this._wallRow(c, nu, ny + 16.5)) {
+    // a hole above: reach over small gaps, or edge sideways to the nearest column that continues up
+    if (c.vy > 0.05 && !this._wallRow(c, nu, ny + 16.5) && this._wallRow(c, nu, ny + 21) && this._grip(c, nu, ny) >= 3) {
+      // hands reach over the gap: keep climbing
+    } else if (c.vy > 0.05 && !this._wallRow(c, nu, ny + 16.5)) {
+      let side = 0;
+      for (const du of [4, -4, 8, -8]) {
+        if (this._wallRow(c, nu + du, ny + 16.5) && this._bodyFree(c, nu + du, ny) && this._grip(c, nu + du, ny) >= 3) { side = du; break; }
+      }
+      const top0 = city.groundAt(this._pp(c, nu, 0, 4, _v2).x, _v2.z, ny + 22);
+      if (side !== 0 && !(top0 > ny + 3 && top0 < ny + 21)) {
+        nu += Math.sign(side) * GORILLA.climbSpeed * 0.8 * dt;
+        ny = y + c.vy * 0.3 * dt;
+      }
+    }
+    if (c.vy > 0.05 && !this._wallRow(c, nu, ny + 16.5) && !this._wallRow(c, nu, ny + 21)) {
       // hands have run out of wall: a roof to haul onto?
       this._pp(c, nu, 0, 4, _v2);
       const top = city.groundAt(_v2.x, _v2.z, ny + 22);

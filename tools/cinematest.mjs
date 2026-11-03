@@ -133,8 +133,11 @@ const sl = await page.evaluate(() => { const s = window.__ctx.searchlights; retu
 check('helicopter searchlights hunt the monster', sl.beams >= 2 && sl.spots >= 1, JSON.stringify(sl));
 await shot('08_heli_night');
 await noHud('rooftop/helicopter combat');
-// swat one down
-await press(7, 60);
+// leap at the nearest chopper and swat it out of the air (as a player would)
+await page.evaluate(() => { const c = window.__ctx, g = c.gorilla; const h = c.military.helis.find((h) => h.state === 'fly'); if (h) { c.cameraRig.yaw = Math.atan2(h.x - g.pos.x, h.z - g.pos.z); c.cameraRig.pitch = 0.2; } });
+await press(0, 12);
+for (let i = 0; i < 8; i++) { await press(7, 6); if ((await page.evaluate(() => window.__ctx.stats.helis)) > 0) break; }
+await tick(40);
 const downs = await page.evaluate(() => window.__ctx.stats.helis);
 check('helicopter destroyed while elevated', downs >= 1, `helis=${downs}`);
 await noHud('helicopter destruction');

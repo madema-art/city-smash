@@ -165,7 +165,14 @@ await axis(1, -1);
 for (let i = 0; i < 40; i++) { await tick(6); const s = await state(); if (s.st === 'climb') break; if (s.st === 'ground') { await press(Y, 10); } }
 await axis(1, 0);
 await tick(20);
-await check('8c', 're-grab tower after leap', (s) => s.st === 'climb');
+await check('8c', 're-grab a wall after leap', (s) => s.st === 'climb');
+// if the re-grab was on a different building, drop back down and return to the tower
+const onTower = await page.evaluate(() => window.__ctx.gorilla.climb && window.__ctx.gorilla.climb.b === window.__tower);
+if (!onTower) {
+  await page.evaluate(() => { const c = window.__ctx, g = c.gorilla, b = window.__tower; g._leaveClimb('drop'); g.pos.set(b.x0 - 5, 0, b.cz + 6); g.vel.set(0, 0, 0); g.state = 'ground'; g.reattachCd = 0; c.cameraRig.yaw = Math.PI / 2; });
+  await tick(30);
+  await press(Y, 20);
+}
 
 // 9. climb onto the roof (setback ledges: haul up, then grab the next tier)
 await page.evaluate(() => { const c = window.__ctx; c.cameraRig.yaw = Math.PI / 2; });

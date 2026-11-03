@@ -354,6 +354,12 @@ export class Building {
         res.damaged++;
         if (this.mask[i] && nd - before > 0.15) {
           res.glass++;
+          // lit rooms short out: a spray of sparks from the smashed window
+          if (this.power[i] > 0.3 && this.ctx.budget.chips > 0 && this.exteriorNormalOf(i, _n)) {
+            const sc = this.cellCenterWorld(i, new THREE.Vector3()).addScaledVector(_n, 2.2);
+            this.ctx.fx.sparks(sc, _n, 7, [1, 0.85, 0.55]);
+            if (Math.random() < 0.3) this.ctx.events.emit('powerFail', { x: sc.x, y: sc.y, z: sc.z });
+          }
           if (this.exteriorNormalOf(i, _n) && this.ctx.budget.glass > 0) {
             this.ctx.budget.glass--;
             const c = this.cellCenterWorld(i, new THREE.Vector3()).addScaledVector(_n, 2.1);
