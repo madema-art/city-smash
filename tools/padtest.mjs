@@ -112,6 +112,6 @@ await tick(60 * 25); await log('25s later');
 await shot('pad_fight');
 const r = await page.evaluate(() => (window.__rumbles || []).slice(-3));
 console.log('last rumbles', JSON.stringify(r));
-await press(8, 2, 5); await log('Back restart');
+await btn(8, true); await tick(80); await btn(8, false); await tick(5); await log('hold Back restart');
 console.log('errors:', errors.length ? errors.slice(0, 5).join('\n---\n') : 'none');
 await browser.close();
